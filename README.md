@@ -1,114 +1,80 @@
-# LO Intelligence — ModelMatch Tool
+# LO Intelligence — Vercel Edition
 
-A password-protected GitHub Pages app that pulls loan officer data from the ModelMatch API by NMLS ID and exports to Excel.
-
----
-
-## Setup Guide
-
-### 1. Create the GitHub Repo
-
-Create a new **private** or public repo and push these files.
+Password-protected web app that proxies the ModelMatch API server-side and exports loan officer data to Excel.
 
 ---
 
-### 2. Generate your AUTH_HASH
+## File Structure
 
-The password is stored as a SHA-256 hash of `username:password` — never in plain text.
-
-Run this in your terminal (replace the values):
-
-```bash
-echo -n "yourusername:yourpassword" | sha256sum
 ```
-
-**On Mac:**
-```bash
-echo -n "yourusername:yourpassword" | shasum -a 256
+lo-intel/
+├── api/
+│   ├── auth.js        ← Login endpoint (validates password)
+│   └── lookup.js      ← ModelMatch proxy (holds your MM token)
+├── public/
+│   ├── index.html     ← Frontend UI
+│   └── app.js         ← Frontend logic
+├── package.json
+├── vercel.json
+└── README.md
 ```
-
-**Or use Node.js:**
-```js
-const crypto = require("crypto");
-console.log(crypto.createHash("sha256").update("yourusername:yourpassword").digest("hex"));
-```
-
-Copy the resulting hash — that's your `AUTH_HASH`.
 
 ---
 
-### 3. Add GitHub Secrets
+## Deploy to Vercel (10 minutes)
 
-Go to your repo → **Settings → Secrets and variables → Actions → New repository secret**
+### 1. Push to GitHub
+Create a new repo and push all files.
 
-Add these two secrets:
+### 2. Import to Vercel
+- Go to [vercel.com](https://vercel.com) → New Project
+- Import your GitHub repo
+- Framework preset: **Other**
+- Root directory: leave as `/`
 
-| Secret Name | Value |
+### 3. Add Environment Variables
+In Vercel → Project → Settings → Environment Variables, add:
+
+| Variable | Value |
 |---|---|
-| `AUTH_HASH` | The SHA-256 hash from step 2 |
-| `MM_TOKEN` | Your ModelMatch API bearer token |
+| `AUTH_HASH` | SHA-256 of `username:password` (see below) |
+| `MM_TOKEN` | Your ModelMatch Bearer token |
 
----
+### 4. Generate AUTH_HASH
+Open any browser tab → F12 → Console, paste:
+```js
+const str = "yourusername:yourpassword";
+const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,"0")).join("");
+console.log(hash);
+```
 
-### 4. Enable GitHub Pages
+### 5. Get your MM_TOKEN
+- Log into app.modelmatch.com
+- Open DevTools → Network tab
+- Filter by `api.modelmatch.com`
+- Click any request → Headers → copy the `Authorization: Bearer ...` value
 
-Go to repo → **Settings → Pages**
-
-- Source: **GitHub Actions**
-- That's it — the workflow handles deployment automatically.
-
----
-
-### 5. Push to `main`
-
-Every push to `main` triggers the workflow:
-1. Injects your secrets into `app.js` at build time
-2. Deploys the built files to GitHub Pages
-
-Your URL will be: `https://yourusername.github.io/your-repo-name/`
+### 6. Deploy
+Push to `main` — Vercel auto-deploys. Your URL:
+```
+https://your-project.vercel.app
+```
 
 ---
 
 ## How It Works
 
 ```
-User visits URL
-     │
-     ▼
-Login screen (username + password)
-     │
-     ├─ SHA-256 hash compared to AUTH_HASH secret
-     │
-     ▼ (if match)
-App unlocks — session stored in sessionStorage
-     │
-     ▼
-Enter NMLS ID → hits ModelMatch API
-     │
-     ├─ /originators?nmls_id=...  → profile + contact info
-     └─ /loans?nmls_id=...        → full loan history + rates
-     │
-     ▼
-Results render → Download Excel button
-     │
-     └─ SheetJS generates .xlsx client-side (no server needed)
+Browser → /api/auth       → validates password → returns session token
+Browser → /api/lookup     → proxy to ModelMatch API (token stays server-side)
+Browser → Excel download  → generated client-side with SheetJS
 ```
 
----
-
-## Security Notes
-
-- The `AUTH_HASH` and `MM_TOKEN` are **never in your source code** — only injected at build time
-- The built `app.js` on GitHub Pages contains the hash and token in the deployed JS — so this is appropriate for **internal/limited use** only, not a public-facing app with sensitive creds
-- Consider adding your GitHub Pages URL to ModelMatch's allowed origins if they support CORS allowlisting
-- Session clears on tab/browser close (sessionStorage, not localStorage)
+CORS is never an issue because all ModelMatch calls happen from Vercel's servers, not the browser.
 
 ---
 
-## Changing the Password
+## Finding the Token (first time)
 
-1. Generate a new `AUTH_HASH` with the new `username:password`
-2. Update the `AUTH_HASH` secret in GitHub
-3. Push any commit to `main` to trigger a redeploy
-
-No code changes needed.
+If the app shows "diagnostic" output instead of real data, it means we need to fine-tune the API endpoint params. The diagnostic output will show which HTTP status codes each param variation returned — paste that here and we'll fix it in minutes.
