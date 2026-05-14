@@ -208,6 +208,7 @@ let state = {
   enrichedLoans: {},
   totalLoans: 0,
   insightsToken: null, // cached JWT from insights.modelmatch.com/refresh
+  mmToken: null,       // cached session token from auth.modelmatch.com
 };
 
 // ── UTILS ────────────────────────────────────────────────
@@ -229,10 +230,29 @@ function getUser(){ return sessionStorage.getItem(SESSION_KEY)||""; }
 async function tryLogin(u,p){ return await sha256(`${u}:${p}`) === AUTH_HASH; }
 
 // ── API ──────────────────────────────────────────────────
+async function getMmSessionToken() {
+  if(state.mmToken && state.mmToken.expiry > Date.now()) return state.mmToken.value;
+  try {
+    const r = await fetch("https://auth.modelmatch.com/api/auth/get-session", {credentials:"include"});
+    if(!r.ok) return null;
+    const d = await r.json();
+    const t = d?.session?.token;
+    if(!t) return null;
+    state.mmToken = { value: t, expiry: Date.now() + 30*60*1000 };
+    return t;
+  } catch(e) { return null; }
+}
+
 async function mmGet(mmPath) {
   const [basePath, qs] = mmPath.split("?");
   const proxyUrl = "/api/mm?path=" + encodeURIComponent(basePath) + (qs?"&"+qs:"");
-  const res = await fetch(proxyUrl, { headers:{"x-app-auth": sessionStorage.getItem(SESSION_KEY)||""} });
+  const mmToken = await getMmSessionToken();
+  const res = await fetch(proxyUrl, { 
+    headers: {
+      "x-app-auth": sessionStorage.getItem(SESSION_KEY)||"",
+      ...(mmToken ? {"x-mm-token": mmToken} : {})
+    }
+  });
   if(!res.ok) throw new Error(`${res.status} — ${mmPath}`);
   return res.json();
 }
@@ -536,8 +556,9 @@ async function runSearch() {
   if(!nmls){ setStatus("Enter a valid NMLS ID","err"); return; }
 
   // Reset per-search state but keep cached token
-  const cachedToken = state.insightsToken;
-  state = { nmls, originatorId:null, searchResult:null, originatorData:null, loans:[], enrichedProps:{}, enrichedLoans:{}, totalLoans:0, insightsToken: cachedToken };
+  const cachedInsights = state.insightsToken;
+  const cachedMm = state.mmToken;
+  state = { nmls, originatorId:null, searchResult:null, originatorData:null, loans:[], enrichedProps:{}, enrichedLoans:{}, totalLoans:0, insightsToken: cachedInsights, mmToken: cachedMm };
   $("results").style.display="none";
   $("pull-btn").disabled=true;
   $("spinner").style.display="inline-block";
