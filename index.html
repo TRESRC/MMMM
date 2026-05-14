@@ -773,6 +773,40 @@ document.addEventListener("DOMContentLoaded", () => {
   $("pull-btn").addEventListener("click", runSearch);
   $("nmls-input").addEventListener("keydown", e=>{ if(e.key==="Enter") runSearch(); });
   $("export-btn").addEventListener("click", exportExcel);
+
+  // Token banner & modal
+  $("token-help-link").addEventListener("click", e=>{ e.preventDefault(); $("token-modal").classList.remove("hidden"); });
+  $("token-banner-close").addEventListener("click", ()=>{ $("token-banner").classList.add("hidden"); });
+  $("token-modal-close").addEventListener("click", ()=>{ $("token-modal").classList.add("hidden"); });
+
+  document.querySelector(".token-code").addEventListener("click", function() {
+    navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
+      this.style.background="rgba(0,255,136,0.15)";
+      setTimeout(()=>this.style.background="",1000);
+    });
+  });
+
+  $("save-token-btn").addEventListener("click", async ()=>{
+    const newToken = $("token-input").value.trim();
+    if(!newToken || newToken.length < 20){ alert("Please paste a valid token"); return; }
+    $("save-token-btn").textContent="Testing…";
+    $("save-token-btn").disabled=true;
+    try {
+      const testRes = await fetch("/api/mm?path=%2Fapi%2Fsearch%2Flo%2Fsearch&loNmlsId=116199&dateRange=last_14_months&type=lo&page=1&limit=1&sortBy=volume", {
+        headers:{"x-app-auth":sessionStorage.getItem(SESSION_KEY)||"","x-mm-token":newToken}
+      });
+      if(testRes.ok){
+        state.mmToken={value:newToken,expiry:Date.now()+10*60*1000};
+        $("token-modal").classList.add("hidden");
+        $("token-banner").classList.add("hidden");
+        setStatus("✓ Session refreshed! Also update MM_SESSION_TOKEN in Vercel to make it permanent.","ok");
+      } else {
+        alert("Token didn't work ("+testRes.status+"). Make sure you copied the full token.");
+      }
+    } catch(e){ alert("Error: "+e.message); }
+    $("save-token-btn").textContent="Save & Continue";
+    $("save-token-btn").disabled=false;
+  });
 });
 </script>
 </body>
