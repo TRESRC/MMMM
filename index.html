@@ -259,6 +259,8 @@ const SESSION_KEY = "lo_intel_v3";
 const PAGE_SIZE = 200; // pull large batches
 
 // ── STATE ────────────────────────────────────────────────
+// Global insights token - persists across searches
+let _insightsToken = null;
 let state = {
   nmls: null,
   originatorId: null,
@@ -268,7 +270,7 @@ let state = {
   enrichedProps: {},
   enrichedLoans: {},
   totalLoans: 0,
-  insightsToken: null, // cached JWT from insights.modelmatch.com/refresh
+  insightsToken: null, // cached JWT - NOTE: use global _insightsToken instead
   mmToken: null,       // cached session token from auth.modelmatch.com
 };
 
@@ -992,7 +994,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Listen for INSIGHTS_JWT from insights popup via postMessage
   window.addEventListener("message", (e) => {
     if(e.data?.type === "INSIGHTS_JWT" && e.data.jwt) {
-      state.insightsToken = { accessToken: e.data.jwt, userId: e.data.user, expiry: Date.now() + 55*60*1000 };
+      _insightsToken = { accessToken: e.data.jwt, userId: e.data.user, expiry: Date.now() + 55*60*1000 };
       $("insights-dot").style.background = "var(--green)";
       $("insights-label").textContent = "Insights connected";
       $("insights-label").style.color = "var(--green)";
@@ -1008,7 +1010,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if(stored) {
         const d = JSON.parse(stored);
         if(d.jwt && d.exp > Date.now()) {
-          state.insightsToken = { accessToken: d.jwt, userId: d.user, expiry: d.exp };
+          _insightsToken = { accessToken: d.jwt, userId: d.user, expiry: d.exp };
           $("insights-dot").style.background = "var(--green)";
           $("insights-label").textContent = "Insights connected";
           $("insights-label").style.color = "var(--green)";
