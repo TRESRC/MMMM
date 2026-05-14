@@ -22,25 +22,13 @@ module.exports = async function handler(req, res) {
   }
 
   const url = `https://app.modelmatch.com${path}${params.toString() ? "?" + params.toString() : ""}`;
-  const token = process.env.MM_SESSION_TOKEN;
-
-  // Try all known better-auth cookie name variations
-  const cookieStr = [
-    `better-auth.session_token=${token}`,
-    `__Secure-better-auth.session_token=${token}`,
-    `better-auth.session_data=${token}`,
-    `sessionToken=${token}`,
-    `session=${token}`,
-  ].join("; ");
 
   try {
     const upstream = await fetch(url, {
       headers: {
-        "Cookie": cookieStr,
+        "Authorization": `Bearer ${process.env.MM_SESSION_TOKEN}`,
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
-        "Referer": "https://app.modelmatch.com/",
-        "Origin": "https://app.modelmatch.com",
       },
     });
 
