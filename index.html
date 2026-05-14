@@ -41,7 +41,7 @@
     .login-error.show{opacity:1;}
 
     /* APP */
-    #app-screen{flex-direction:column;align-items:stretch;overflow-y:auto;position:fixed;inset:0;}
+    #app-screen{flex-direction:column;align-items:stretch;overflow-y:auto;position:absolute;inset:0;}
     .topbar{position:fixed;top:0;left:0;right:0;height:52px;z-index:100;background:rgba(6,6,8,0.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 28px;}
     .top-logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:0.1em;background:linear-gradient(135deg,var(--green),#00aaff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
     .top-right{display:flex;align-items:center;gap:16px;}
@@ -139,6 +139,7 @@
     /* TOKEN MODAL */
     .token-modal,.fetch-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:20px;}
     .token-modal.hidden{display:none;}
+    .fetch-modal.hidden{display:none;}
     .token-modal-box{background:var(--card);border:1px solid var(--border2);border-radius:4px;padding:36px;max-width:580px;width:100%;position:relative;}
     .token-modal-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:0.06em;color:var(--green);margin-bottom:24px;}
     .token-modal-steps{display:flex;flex-direction:column;gap:14px;margin-bottom:24px;}
@@ -414,14 +415,13 @@ function renderLoans() {
   }
 
   const rows = loans.map((l,i) => {
-    // Match enriched data by property address (key used in enrichedProps)
     const addrKey = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
     const ep = state.enrichedProps[addrKey] || {};
     const el = state.enrichedLoans[l.id] || {};
-    const borrower = Array.isArray(l.borrower) ? l.borrower[0] : l.borrower;
-    const bName = borrower?.name || [borrower?.firstName, borrower?.lastName].filter(Boolean).join(" ") || "—";
-    const addr = l.address?.streetAddress || l.property_address || "—";
-    const rate = el.interestRate || ep["Interest Rate"] || "—";
+    // Support both flat and nested API structures
+    const b1Name = l.buyer1FirstMiddle && l.buyer1Last ? l.buyer1FirstMiddle+" "+l.buyer1Last : (l.borrower1 || l.borrower?.[0]?.name || "—");
+    const addr = l.property_address || l.address?.streetAddress || "—";
+    const rate = el.interestRate || ep["Interest Rate"] || (l.interestRate ? l.interestRate+"%" : "—");
     const phone = ep["Borrower Phone Number"] || "—";
     const email = ep["Borrower Email Address"] || "—";
     const isEnriched = Object.keys(ep).length > 0;
@@ -503,25 +503,60 @@ function exportExcel() {
   ];
 
   const loanRows = state.loans.map(l => {
-    const addr2 = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
-    const ep = state.enrichedProps[addr2] || {};
+    // Support both flat API structure (app.modelmatch.com) and nested structure (insights)
+    const addrKey = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
+    const ep = state.enrichedProps[addrKey] || {};
     const el = state.enrichedLoans[l.id] || {};
-    const borrowers = Array.isArray(l.borrower) ? l.borrower : [l.borrower].filter(Boolean);
-    const b1 = borrowers[0] || {};
-    const addrObj = l.address || {};
-    const rate = el.interestRate || ep["Interest Rate"] || "";
+    
+    // Flat API fields (from app.modelmatch.com popup)
+    const streetAddr = l.property_address || l.address?.streetAddress || "";
+    const city = l.city || l.address?.city || "";
+    const state_ = l.state || l.address?.state || "";
+    const zip = l.zip || l.address?.zipCode || "";
+    const county = l.county || l.address?.county || "";
+    
+    // Borrower name parsing - flat API uses borrower1, buyer1FirstMiddle/buyer1Last
+    const b1First = l.buyer1FirstMiddle?.split(" ")[0] || l.address?.borrower?.[0]?.firstName || "";
+    const b1Middle = l.buyer1FirstMiddle?.split(" ").slice(1).join(" ") || l.address?.borrower?.[0]?.middleName || "";
+    const b1Last = l.buyer1Last || l.address?.borrower?.[0]?.lastName || "";
+    
+    // LO info
+    const loName = l.loanOriginator?.name || l.originator_name || "";
+    const loNmls = l.loanOriginator?.nmlsId || l.originator_nmls || l.mm_property_id?.match(/nmls(\d+)/)?.[1] || "";
+    
+    // Employer
+    const empName = l.employerName || (l.employers||[])[0]?.name || "";
+    const empNmls = l.employerNmlsId || (l.employers||[])[0]?.nmlsId || "";
+    
+    // Loan company
+    const lcName = l.loanCompany?.name || l.lender_name || l.lenderName || "";
+    const lcNmls = l.loanCompany?.nmlsId || "";
+    
+    // Agents
+    const buyerAgentName = l.buyerAgentName || l.buyerSideAgent?.name || "";
+    const listAgentName = l.listAgentName || l.sellerSideAgent?.name || "";
+    
+    // Title company - can be object or string
+    const titleCo = typeof l.titleCompany === "object" ? l.titleCompany?.name : l.titleCompany || "";
+    
+    // Dates
+    const txDate = l.tx_date ? new Date(l.tx_date) : null;
+    const txDateStr = txDate ? txDate.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
+    
+    // Rate & amount
+    const rate = el.interestRate || ep["Interest Rate"] || (l.interestRate && l.interestRate !== null ? l.interestRate : "") || "";
+    const mortgageAmt = l.loan_amount || l.mortgage || 0;
 
-    // Use enriched data if available, fall back to raw loan data
     return [
       ep["Borrower Status"] || l.borrowerStatus || "",
-      ep["Street Address"] || addrObj.streetAddress || l.property_address || "",
-      ep["City"] || addrObj.city || "",
-      ep["State"] || addrObj.state || "",
-      ep["Zip Code"] || addrObj.zipCode || "",
-      ep["County"] || addrObj.county || "",
-      ep["Borrower First Name"] || b1.firstName || "",
-      ep["Borrower Middle Name"] || b1.middleName || "",
-      ep["Borrower Last Name"] || b1.lastName || "",
+      ep["Street Address"] || streetAddr,
+      ep["City"] || city,
+      ep["State"] || state_,
+      ep["Zip Code"] || zip,
+      ep["County"] || county,
+      ep["Borrower First Name"] || b1First,
+      ep["Borrower Middle Name"] || b1Middle,
+      ep["Borrower Last Name"] || b1Last,
       ep["Borrower Phone Number Type"] || "",
       ep["Borrower Phone Number"] || "",
       ep["Borrower Phone Number DNC"] || "No",
@@ -538,34 +573,34 @@ function exportExcel() {
       ep["Price Range Min"] || "",
       ep["Price Range Max"] || "",
       rate,
-      ep["Mortgage Amount"] || (l.loan_amount||l.mortgage ? "$"+Number(l.loan_amount||l.mortgage).toLocaleString() : ""),
-      ep["Sale Price"] || l.salePrice || "",
+      mortgageAmt ? "$"+Number(mortgageAmt).toLocaleString() : "",
+      ep["Sale Price"] || l.sale_price || l.salePrice || "",
       ep["Loan Type"] || l.mm_loan_type || l.loanType || "",
       ep["Transaction Type"] || l.mm_loan_transaction_type || l.transactionType || "",
-      ep["Loan Originator"] || l.loanOriginator?.name || "",
-      ep["Loan Originator NMLS ID"] || l.loanOriginator?.nmlsId || "",
-      ep["Employer"] || (l.employers||[])[0]?.name || l.employerName || "",
-      ep["Employer NMLS ID"] || (l.employers||[])[0]?.nmlsId || l.employerNmlsId || "",
-      ep["Loan Company"] || l.loanCompany?.name || "",
-      ep["Loan Company NMLS ID"] || l.loanCompany?.nmlsId || "",
+      ep["Loan Originator"] || loName,
+      ep["Loan Originator NMLS ID"] || loNmls,
+      ep["Employer"] || empName,
+      ep["Employer NMLS ID"] || empNmls,
+      ep["Loan Company"] || lcName,
+      ep["Loan Company NMLS ID"] || lcNmls,
       ep["Broker"] || l.broker?.name || "",
-      ep["Broker NMLS ID"] || l.broker?.nmlsId || l.brokerNmlsId || "",
-      ep["Lender"] || l.lenderName || l.lender?.name || "",
-      ep["Mortgage Date"] || fmtD(l.mortgageDate||l.tx_date||l.close_date),
-      ep["Sale Date"] || fmtD(l.saleDate||l.tx_date),
-      ep["Buyer Agent Name"] || l.buyerSideAgent?.name || "",
-      ep["Buyer Agent First Name"] || l.buyerSideAgent?.firstName || "",
-      ep["Buyer Agent Last Name"] || l.buyerSideAgent?.lastName || "",
-      ep["Buyer Agent Phone Number"] || l.buyerSideAgency?.phone || "",
+      ep["Broker NMLS ID"] || l.brokerNmlsId || l.broker?.nmlsId || "",
+      ep["Lender"] || l.lenderName || "",
+      ep["Mortgage Date"] || txDateStr,
+      ep["Sale Date"] || txDateStr,
+      ep["Buyer Agent Name"] || buyerAgentName,
+      ep["Buyer Agent First Name"] || (buyerAgentName.split(" ")[0] || ""),
+      ep["Buyer Agent Last Name"] || (buyerAgentName.split(" ").slice(1).join(" ") || ""),
+      ep["Buyer Agent Phone Number"] || "",
       ep["Buyer Agent Email Address"] || "",
       ep["Buyer Agent Agency"] || l.buyerSideAgency?.name || "",
-      ep["Listing Agent Name"] || l.sellerSideAgent?.name || "",
+      ep["Listing Agent Name"] || listAgentName,
       ep["Listing Agent Email"] || "",
-      ep["Listing Agent Phone"] || l.sellerSideAgency?.phone || "",
-      ep["Listing Agent First Name"] || l.sellerSideAgent?.firstName || "",
-      ep["Listing Agent Last Name"] || l.sellerSideAgent?.lastName || "",
+      ep["Listing Agent Phone"] || "",
+      ep["Listing Agent First Name"] || (listAgentName.split(" ")[0] || ""),
+      ep["Listing Agent Last Name"] || (listAgentName.split(" ").slice(1).join(" ") || ""),
       ep["Listing Agent Agency"] || l.sellerSideAgency?.name || "",
-      ep["Title Company"] || l.titleCompany || "",
+      ep["Title Company"] || titleCo,
       ep["Discretionary Income"] || "",
       ep["Net Worth"] || "",
       ep["Recently Divorced"] || "No",
