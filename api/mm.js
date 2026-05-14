@@ -1,5 +1,4 @@
 // api/mm.js — Vercel serverless proxy for ModelMatch API
-// Session token stored as env var, never exposed to browser
 
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -23,13 +22,25 @@ module.exports = async function handler(req, res) {
   }
 
   const url = `https://app.modelmatch.com${path}${params.toString() ? "?" + params.toString() : ""}`;
+  const token = process.env.MM_SESSION_TOKEN;
+
+  // Try all known better-auth cookie name variations
+  const cookieStr = [
+    `better-auth.session_token=${token}`,
+    `__Secure-better-auth.session_token=${token}`,
+    `better-auth.session_data=${token}`,
+    `sessionToken=${token}`,
+    `session=${token}`,
+  ].join("; ");
 
   try {
     const upstream = await fetch(url, {
       headers: {
-        "Cookie": `better-auth.session_token=${process.env.MM_SESSION_TOKEN}; better-auth.session_data=${process.env.MM_SESSION_TOKEN}`,
+        "Cookie": cookieStr,
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "Referer": "https://app.modelmatch.com/",
+        "Origin": "https://app.modelmatch.com",
       },
     });
 
