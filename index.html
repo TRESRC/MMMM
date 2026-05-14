@@ -41,7 +41,7 @@
     .login-error.show{opacity:1;}
 
     /* APP */
-    #app-screen{flex-direction:column;align-items:stretch;}
+    #app-screen{flex-direction:column;align-items:stretch;overflow-y:auto;position:fixed;inset:0;}
     .topbar{position:fixed;top:0;left:0;right:0;height:52px;z-index:100;background:rgba(6,6,8,0.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 28px;}
     .top-logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:0.1em;background:linear-gradient(135deg,var(--green),#00aaff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
     .top-right{display:flex;align-items:center;gap:16px;}
@@ -137,7 +137,7 @@
     #token-banner-close{margin-left:auto;background:none;border:none;color:var(--amber);cursor:pointer;font-size:14px;}
 
     /* TOKEN MODAL */
-    .token-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:20px;}
+    .token-modal,.fetch-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:20px;}
     .token-modal.hidden{display:none;}
     .token-modal-box{background:var(--card);border:1px solid var(--border2);border-radius:4px;padding:36px;max-width:580px;width:100%;position:relative;}
     .token-modal-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:0.06em;color:var(--green);margin-bottom:24px;}
@@ -212,21 +212,6 @@
       </div>
       <div class="token-modal-note">This takes effect immediately. You'll need to do this once a week.</div>
       <button class="token-modal-close" id="token-modal-close">Cancel</button>
-    </div>
-  </div>
-
-  <div class="fetch-modal hidden" id="fetch-modal">
-    <div class="token-modal-box">
-      <div class="token-modal-title">Step 2 — Run in Popup Console</div>
-      <div class="token-modal-steps">
-        <div class="step"><span class="step-n">1</span>The <strong>ModelMatch popup</strong> just opened — wait for it to fully load</div>
-        <div class="step"><span class="step-n">2</span>Press <strong>F12</strong> in the popup window → click the <strong>Console</strong> tab</div>
-        <div class="step"><span class="step-n">3</span>Click the command below to copy it, then paste it in the popup console and press Enter</div>
-      </div>
-      <div class="token-code" id="fetch-cmd" style="font-size:9px;max-height:80px;overflow:auto;cursor:pointer;" title="Click to copy">…</div>
-      <div style="font-family:'Chivo Mono',monospace;font-size:10px;color:var(--green);margin-top:8px;text-align:center;">&#x2713; Click the code above to copy it</div>
-      <div class="token-modal-note" style="margin-top:16px;">Data will load automatically after you run the command. This popup will close on its own.</div>
-      <button class="token-modal-close" id="fetch-modal-close">Cancel</button>
     </div>
   </div>
 
@@ -986,5 +971,20 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 </script>
+  <!-- Fetch modal - outside app-screen so it overlays properly -->
+  <div class="fetch-modal hidden" id="fetch-modal">
+    <div class="token-modal-box">
+      <div class="token-modal-title">Step 2 — Run in Popup Console</div>
+      <div class="token-modal-steps">
+        <div class="step"><span class="step-n">1</span>The <strong>ModelMatch popup</strong> just opened — wait for it to fully load</div>
+        <div class="step"><span class="step-n">2</span>Press <strong>F12</strong> in the popup window → click the <strong>Console</strong> tab</div>
+        <div class="step"><span class="step-n">3</span>Click the command below to copy it, paste it in the popup console and press Enter</div>
+      </div>
+      <div class="token-code" id="fetch-cmd" style="font-size:9px;max-height:80px;overflow:auto;cursor:pointer;" title="Click to copy">…</div>
+      <div style="font-family:'Chivo Mono',monospace;font-size:10px;color:var(--green);margin-top:8px;text-align:center;">✓ Click the code above to copy it</div>
+      <div class="token-modal-note" style="margin-top:16px;">Data loads automatically after you run the command. The popup will close on its own.</div>
+      <button class="token-modal-close" id="fetch-modal-close">Cancel</button>
+    </div>
+  </div>
 </body>
 </html>
