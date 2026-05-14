@@ -1,6 +1,6 @@
-# LO Intelligence — Vercel Edition
+# LO Intel — GitHub Pages Edition
 
-Password-protected web app that proxies the ModelMatch API server-side and exports loan officer data to Excel.
+Single-file, password-protected LO data tool. Uses ModelMatch session cookies directly — **no backend, no Vercel, no API keys to manage.**
 
 ---
 
@@ -8,73 +8,63 @@ Password-protected web app that proxies the ModelMatch API server-side and expor
 
 ```
 lo-intel/
-├── api/
-│   ├── auth.js        ← Login endpoint (validates password)
-│   └── lookup.js      ← ModelMatch proxy (holds your MM token)
-├── public/
-│   ├── index.html     ← Frontend UI
-│   └── app.js         ← Frontend logic
-├── package.json
-├── vercel.json
-└── README.md
-```
-
----
-
-## Deploy to Vercel (10 minutes)
-
-### 1. Push to GitHub
-Create a new repo and push all files.
-
-### 2. Import to Vercel
-- Go to [vercel.com](https://vercel.com) → New Project
-- Import your GitHub repo
-- Framework preset: **Other**
-- Root directory: leave as `/`
-
-### 3. Add Environment Variables
-In Vercel → Project → Settings → Environment Variables, add:
-
-| Variable | Value |
-|---|---|
-| `AUTH_HASH` | SHA-256 of `username:password` (see below) |
-| `MM_TOKEN` | Your ModelMatch Bearer token |
-
-### 4. Generate AUTH_HASH
-Open any browser tab → F12 → Console, paste:
-```js
-const str = "yourusername:yourpassword";
-const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
-const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,"0")).join("");
-console.log(hash);
-```
-
-### 5. Get your MM_TOKEN
-- Log into app.modelmatch.com
-- Open DevTools → Network tab
-- Filter by `api.modelmatch.com`
-- Click any request → Headers → copy the `Authorization: Bearer ...` value
-
-### 6. Deploy
-Push to `main` — Vercel auto-deploys. Your URL:
-```
-https://your-project.vercel.app
+├── index.html                  ← Everything (UI + logic)
+├── .gitignore
+├── README.md
+└── .github/
+    └── workflows/
+        └── deploy.yml          ← Injects secret + deploys to Pages
 ```
 
 ---
 
 ## How It Works
 
-```
-Browser → /api/auth       → validates password → returns session token
-Browser → /api/lookup     → proxy to ModelMatch API (token stays server-side)
-Browser → Excel download  → generated client-side with SheetJS
-```
+1. User logs in with username/password (checked against SHA-256 hash)
+2. App calls `app.modelmatch.com/api/` directly using the user's existing session cookie
+3. Results render inline — profile, stats, full transaction history
+4. One click exports to Excel (SheetJS, client-side)
 
-CORS is never an issue because all ModelMatch calls happen from Vercel's servers, not the browser.
+**No proxy needed** — the API is on the same domain as the ModelMatch app, so session cookies work seamlessly.
 
 ---
 
-## Finding the Token (first time)
+## Setup (10 min)
 
-If the app shows "diagnostic" output instead of real data, it means we need to fine-tune the API endpoint params. The diagnostic output will show which HTTP status codes each param variation returned — paste that here and we'll fix it in minutes.
+### 1. Push to GitHub
+Create a new repo and push all files.
+
+### 2. Generate your AUTH_HASH
+Open any browser tab → F12 → Console:
+```js
+const str = "yourusername:yourpassword";
+const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+const hash = Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+console.log(hash);
+```
+
+### 3. Add GitHub Secret
+Repo → Settings → Secrets → Actions → New secret:
+- Name: `AUTH_HASH`
+- Value: the hash from step 2
+
+### 4. Enable GitHub Pages
+Repo → Settings → Pages → Source: **GitHub Actions**
+
+### 5. Push to main
+GitHub Actions builds and deploys automatically.
+
+**Your URL:** `https://yourusername.github.io/your-repo-name/`
+
+---
+
+## Important
+
+The user must be **logged into app.modelmatch.com** in the same browser for the API calls to work (session cookie required). This tool is designed for internal team use where everyone has a ModelMatch account.
+
+---
+
+## Changing Password
+1. Generate new hash with new `username:password`
+2. Update `AUTH_HASH` secret in GitHub
+3. Push any commit to redeploy — no code changes needed
