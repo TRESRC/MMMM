@@ -215,6 +215,21 @@
     </div>
   </div>
 
+  <div class="fetch-modal hidden" id="fetch-modal">
+    <div class="token-modal-box">
+      <div class="token-modal-title">Step 2 — Run in Popup Console</div>
+      <div class="token-modal-steps">
+        <div class="step"><span class="step-n">1</span>The <strong>ModelMatch popup</strong> just opened — wait for it to fully load</div>
+        <div class="step"><span class="step-n">2</span>Press <strong>F12</strong> in the popup window → click the <strong>Console</strong> tab</div>
+        <div class="step"><span class="step-n">3</span>Click the command below to copy it, then paste it in the popup console and press Enter</div>
+      </div>
+      <div class="token-code" id="fetch-cmd" style="font-size:9px;max-height:80px;overflow:auto;cursor:pointer;" title="Click to copy">…</div>
+      <div style="font-family:'Chivo Mono',monospace;font-size:10px;color:var(--green);margin-top:8px;text-align:center;">&#x2713; Click the code above to copy it</div>
+      <div class="token-modal-note" style="margin-top:16px;">Data will load automatically after you run the command. This popup will close on its own.</div>
+      <button class="token-modal-close" id="fetch-modal-close">Cancel</button>
+    </div>
+  </div>
+
   <div class="main">
     <div class="hero">
       <div class="hero-label">ModelMatch · Insights · Powered</div>
@@ -595,99 +610,35 @@ async function runSearch() {
   $("pull-label").textContent="Searching…";
   $("enrich-status").textContent="";
 
-  setStatus(`Fetching data for NMLS ${nmls} via ModelMatch…`);
-
-  // Always use popup approach - fetches data directly from app.modelmatch.com (no CORS/auth issues)
+  // Store NMLS for the popup to use
   sessionStorage.setItem('lo_intel_nmls', nmls);
-  
+  state.pendingNmls = nmls;
+
+  // Build the console command the user will paste
+  const cmd = `(async()=>{const n='${nmls}';const sr=await fetch('/api/search/lo/search?loNmlsId='+n+'&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume',{credentials:'include'});const sd=await sr.json();const hits=sd?.hits?.hits||[];const src=hits.find(h=>h._source?.nmls_id===String(n))||hits[0];if(!src){window.opener.postMessage({type:'MM_TOKEN_AUTO',error:'No LO found'},'*');window.close();return;}const id=src._source.id;let loans=[],from=0,total=null;while(true){const tr=await fetch('/api/originators/'+id+'/transactions?dateRange=last_14_months&limit=200&from='+from+'&sort_field=tx_date&sort_order=desc',{credentials:'include',headers:{'x-organization-id':'5Zh2dlrSnPPZGRJaC2hI53RPB8aqQSBf'}});const td=await tr.json();const txs=td?.transactions||[];if(total===null)total=td?.total||txs.length;loans.push(...txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179'&&!!(t.address?.streetAddress||t.property_address)));from+=200;if(txs.length<200||from>=total)break;}window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator:src._source,loans,total}},'*');setTimeout(()=>window.close(),300);})()`;
+
+  // Open popup on app.modelmatch.com
   const popup = window.open(
-    'https://app.modelmatch.com/fieldmarketingmovementcom/market-insights/search?nmls='+nmls,
+    'https://app.modelmatch.com',
     'mm_data_popup',
-    'width=700,height=500,menubar=no,toolbar=no,location=yes,status=no'
+    'width=900,height=600,menubar=no,toolbar=no,location=yes,status=no'
   );
 
   if(!popup) {
-    setStatus("Popup blocked! Please allow popups for this site.", "err");
+    setStatus("Popup blocked — please allow popups for this site then try again.", "err");
     $("pull-btn").disabled=false;
     $("spinner").style.display="none";
     $("pull-label").textContent="Pull Data";
-    showTokenBanner();
     return;
   }
 
-  setStatus("Popup opened — loading data from ModelMatch…");
-
-  // Inject data-fetch script once popup loads on app.modelmatch.com
-  const interval = setInterval(() => {
-    try {
-      if(popup.closed) {
-        clearInterval(interval);
-        $("pull-btn").disabled=false;
-        $("spinner").style.display="none";
-        $("pull-label").textContent="Pull Data";
-        return;
-      }
-      const href = popup.location.href;
-      if(href && href.includes('app.modelmatch.com') && !href.includes('auth.modelmatch.com')) {
-        clearInterval(interval);
-        try {
-          const s = popup.document.createElement('script');
-          s.textContent = `
-            (async function() {
-              try {
-                const nmls = new URLSearchParams(window.location.search).get('nmls') || sessionStorage.getItem('lo_intel_nmls') || '${nmls}';
-                // Step 1: Search
-                const sr = await fetch('/api/search/lo/search?loNmlsId='+nmls+'&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume', {credentials:'include'});
-                const sd = await sr.json();
-                const hits = sd?.hits?.hits || [];
-                const src = hits.find(h=>h._source?.nmls_id===String(nmls))||hits[0];
-                if(!src) { window.opener.postMessage({type:'MM_TOKEN_AUTO',error:'No LO found for NMLS '+nmls},'*'); window.close(); return; }
-                
-                // Step 2: Get all loans
-                const id = src._source.id;
-                let loans=[], from=0, total=null;
-                while(true) {
-                  const tr = await fetch('/api/originators/'+id+'/transactions?dateRange=last_14_months&limit=200&from='+from+'&sort_field=tx_date&sort_order=desc', {credentials:'include',headers:{'x-organization-id':'5Zh2dlrSnPPZGRJaC2hI53RPB8aqQSBf'}});
-                  const td = await tr.json();
-                  const txs = td?.transactions||[];
-                  if(total===null) total=td?.total||txs.length;
-                  const filtered=txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179'&&!!(t.address?.streetAddress||t.property_address));
-                  loans.push(...filtered);
-                  from+=200;
-                  if(txs.length<200||from>=total) break;
-                }
-                window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator:src._source,loans,total}},'*');
-              } catch(e) {
-                window.opener.postMessage({type:'MM_TOKEN_AUTO',error:e.message},'*');
-              }
-              setTimeout(()=>window.close(),500);
-            })();
-          `;
-          popup.document.head.appendChild(s);
-        } catch(e2) {
-          // Script injection blocked - show manual instructions
-          clearInterval(interval);
-          $("pull-btn").disabled=false;
-          $("spinner").style.display="none";
-          $("pull-label").textContent="Pull Data";
-          setStatus("Script injection blocked — use manual token refresh", "err");
-          showTokenBanner();
-        }
-      }
-    } catch(e) { /* still loading */ }
-  }, 500);
-
-  // Timeout after 30s
-  setTimeout(() => {
-    clearInterval(interval);
-    if(popup && !popup.closed) popup.close();
-    if($("pull-btn").disabled) {
-      $("pull-btn").disabled=false;
-      $("spinner").style.display="none";
-      $("pull-label").textContent="Pull Data";
-      setStatus("Timed out — please try again", "err");
-    }
-  }, 30000);
+  // Show step-by-step modal with the command to paste
+  showFetchModal(cmd, nmls);
+  
+  $("pull-btn").disabled=false;
+  $("spinner").style.display="none";
+  $("pull-label").textContent="Pull Data";
+  setStatus("Follow the steps in the popup instructions…", "warn");
 }
 
 async function enrichInBackground() {
@@ -779,6 +730,15 @@ document.addEventListener("click", e => {
     });
   }
 });
+
+// ── FETCH MODAL ──────────────────────────────────────────────
+function showFetchModal(cmd, nmls) {
+  $("fetch-cmd").textContent = cmd;
+  $("fetch-modal").classList.remove("hidden");
+}
+function hideFetchModal() {
+  $("fetch-modal").classList.add("hidden");
+}
 
 // ── INIT ──────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
@@ -914,6 +874,7 @@ document.addEventListener("DOMContentLoaded", () => {
     $("auto-token-btn").disabled = false;
 
     if(e.data.data) {
+      hideFetchModal();
       // Got full loan data back from popup running on app.modelmatch.com
       const {originator, loans, total} = e.data.data;
       state.searchResult = originator;
@@ -941,6 +902,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Token banner & modal
   $("token-help-link").addEventListener("click", e=>{ e.preventDefault(); $("token-modal").classList.remove("hidden"); });
+  $("fetch-modal-close").addEventListener("click", hideFetchModal);
+  $("fetch-cmd").addEventListener("click", function() {
+    navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
+      this.style.background="rgba(0,255,136,0.15)";
+      this.title = "Copied!";
+      setTimeout(()=>{ this.style.background=""; this.title="Click to copy"; },1500);
+    });
+  });
   $("token-banner-close").addEventListener("click", ()=>{ $("token-banner").classList.add("hidden"); });
   $("token-modal-close").addEventListener("click", ()=>{ $("token-modal").classList.add("hidden"); });
 
