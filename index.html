@@ -797,17 +797,27 @@ document.addEventListener("DOMContentLoaded", () => {
         // Try to access the popup's location - will throw if cross-origin
         const href = popup.location.href;
         if(href && href.includes('app.modelmatch.com') && !href.includes('auth.modelmatch.com')) {
-          // Popup is on the right domain - inject our token fetch
-          popup.eval(`
-            fetch('https://auth.modelmatch.com/api/auth/get-session', {credentials:'include'})
-              .then(r=>r.json())
-              .then(d=>{
-                const t = d?.session?.token;
-                window.opener.postMessage({type:'MM_TOKEN_AUTO', token: t}, '*');
-                window.close();
-              })
-              .catch(e=>{ window.opener.postMessage({type:'MM_TOKEN_AUTO', token:null, error:e.message}, '*'); window.close(); });
-          `);
+          // Popup is on right domain - inject script via createElement (bypasses some CSP)
+          try {
+            const doc = popup.document;
+            const s = doc.createElement('script');
+            s.textContent = `
+              fetch('https://auth.modelmatch.com/api/auth/get-session', {credentials:'include'})
+                .then(r=>r.json())
+                .then(d=>{
+                  window.opener.postMessage({type:'MM_TOKEN_AUTO', token: d?.session?.token||null}, '*');
+                  setTimeout(()=>window.close(), 500);
+                })
+                .catch(e=>{ 
+                  window.opener.postMessage({type:'MM_TOKEN_AUTO', token:null, error:e.message}, '*');
+                  setTimeout(()=>window.close(), 500);
+                });
+            `;
+            doc.head.appendChild(s);
+          } catch(e2) {
+            // Script injection blocked - navigate popup to our token fetcher
+            popup.location.href = 'https://app.modelmatch.com/?_lo_intel_fetch=1';
+          }
           clearInterval(interval);
         }
       } catch(e) {
