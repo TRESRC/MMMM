@@ -429,7 +429,9 @@ function renderLoans() {
   }
 
   const rows = loans.map((l,i) => {
-    const ep = state.enrichedProps[l.propertyId] || {};
+    // Match enriched data by property address (key used in enrichedProps)
+    const addr = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
+    const ep = state.enrichedProps[addr] || {};
     const el = state.enrichedLoans[l.id] || {};
     const borrower = Array.isArray(l.borrower) ? l.borrower[0] : l.borrower;
     const bName = borrower?.name || [borrower?.firstName, borrower?.lastName].filter(Boolean).join(" ") || "—";
@@ -516,7 +518,8 @@ function exportExcel() {
   ];
 
   const loanRows = state.loans.map(l => {
-    const ep = state.enrichedProps[l.propertyId] || {};
+    const addr2 = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
+    const ep = state.enrichedProps[addr2] || {};
     const el = state.enrichedLoans[l.id] || {};
     const borrowers = Array.isArray(l.borrower) ? l.borrower : [l.borrower].filter(Boolean);
     const b1 = borrowers[0] || {};
@@ -615,7 +618,109 @@ async function runSearch() {
   state.pendingNmls = nmls;
 
   // Build the console command the user will paste
-  const cmd = `(async()=>{const n='${nmls}';const sr=await fetch('/api/search/lo/search?loNmlsId='+n+'&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume',{credentials:'include'});const sd=await sr.json();const hits=sd?.hits?.hits||[];const src=hits.find(h=>h._source?.nmls_id===String(n))||hits[0];if(!src){window.opener.postMessage({type:'MM_TOKEN_AUTO',error:'No LO found'},'*');window.close();return;}const id=src._source.id;let loans=[],from=0,total=null;while(true){const tr=await fetch('/api/originators/'+id+'/transactions?dateRange=last_14_months&limit=200&from='+from+'&sort_field=tx_date&sort_order=desc',{credentials:'include',headers:{'x-organization-id':'5Zh2dlrSnPPZGRJaC2hI53RPB8aqQSBf'}});const td=await tr.json();const txs=td?.transactions||[];if(total===null)total=td?.total||txs.length;loans.push(...txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179'&&!!(t.address?.streetAddress||t.property_address)));from+=200;if(txs.length<200||from>=total)break;}window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator:src._source,loans,total}},'*');setTimeout(()=>window.close(),300);})()`;
+  const ENRICH_LIMIT = 5; // conserve credits during testing
+  const cmd = `(async()=>{
+  try {
+    const n='${nmls}';
+    
+    // 1. Search for LO
+    const sr=await fetch('/api/search/lo/search?loNmlsId='+n+'&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume',{credentials:'include'});
+    const sd=await sr.json();
+    const hits=sd?.hits?.hits||[];
+    const src=hits.find(h=>h._source?.nmls_id===String(n))||hits[0];
+    if(!src){window.opener.postMessage({type:'MM_TOKEN_AUTO',error:'No LO found for NMLS '+n},'*');window.close();return;}
+    const originator=src._source;
+    const id=originator.id;
+
+    // 2. Get all loans
+    let loans=[],from=0,total=null;
+    while(true){
+      const tr=await fetch('/api/originators/'+id+'/transactions?dateRange=last_14_months&limit=200&from='+from+'&sort_field=tx_date&sort_order=desc',{credentials:'include',headers:{'x-organization-id':'5Zh2dlrSnPPZGRJaC2hI53RPB8aqQSBf'}});
+      const td=await tr.json();
+      const txs=td?.transactions||[];
+      if(total===null)total=td?.total||txs.length;
+      loans.push(...txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179'&&!!(t.address?.streetAddress||t.property_address)));
+      from+=200;
+      if(txs.length<200||from>=total)break;
+    }
+
+    // 3. Get insights JWT for enrichment (works here because we're on app.modelmatch.com)
+    let enrichedProps={}, enrichedLoans={};
+    try {
+      const refreshRes=await fetch('https://insights.modelmatch.com/refresh',{method:'POST',credentials:'include'});
+      const refreshData=await refreshRes.json();
+      const jwt=refreshData.accessToken;
+      const userId=refreshData.user;
+
+      if(jwt && userId) {
+        // 4. Enrich properties (owner contact info) - first ${ENRICH_LIMIT} loans only
+        const loansToEnrich=loans.slice(0,${ENRICH_LIMIT});
+        for(const loan of loansToEnrich){
+          try {
+            const addr=(loan.address?.streetAddress||'').toLowerCase().trim();
+            if(!addr) continue;
+            
+            // Get proxy URL for enriched-property
+            const propShapeRes=await fetch('https://api.next.modelmatch.com/shape/enriched-property',{
+              method:'POST',
+              headers:{'Authorization':'Bearer '+jwt,'Content-Type':'application/json','Origin':'https://insights.modelmatch.com'},
+              body:JSON.stringify({shape:{table:'enriched_property',where:'user_id = \$1',params:[userId]}})
+            });
+            const propShape=await propShapeRes.json();
+            if(propShape.url){
+              const propData=await fetch(propShape.url,{headers:{Authorization:propShape.headers.Authorization}});
+              const propText=await propData.text();
+              // Parse NDJSON
+              for(const line of propText.split('\n')){
+                try{
+                  const parsed=JSON.parse(line);
+                  if(Array.isArray(parsed)){
+                    parsed.forEach(item=>{
+                      if(item.value&&item.value['Street Address']){
+                        const k=item.value['Street Address'].toLowerCase().trim();
+                        enrichedProps[k]=item.value;
+                      }
+                    });
+                  }
+                }catch{}
+              }
+            }
+            break; // Only need to call once - returns ALL enriched properties for the user
+          } catch(e){ console.warn('prop enrich err',e.message); }
+        }
+
+        // 5. Enrich loans (calculated rate)
+        try {
+          const loanShapeRes=await fetch('https://api.next.modelmatch.com/shape/enriched-loan',{
+            method:'POST',
+            headers:{'Authorization':'Bearer '+jwt,'Content-Type':'application/json','Origin':'https://insights.modelmatch.com'},
+            body:JSON.stringify({shape:{table:'enriched_loan',where:'user_id = \$1',params:[userId]}})
+          });
+          const loanShape=await loanShapeRes.json();
+          if(loanShape.url){
+            const loanData=await fetch(loanShape.url,{headers:{Authorization:loanShape.headers.Authorization}});
+            const loanText=await loanData.text();
+            for(const line of loanText.split('\n')){
+              try{
+                const parsed=JSON.parse(line);
+                if(Array.isArray(parsed)){
+                  parsed.forEach(item=>{
+                    if(item.value&&item.value.loanID) enrichedLoans[item.value.loanID]=item.value;
+                  });
+                }
+              }catch{}
+            }
+          }
+        } catch(e){ console.warn('loan enrich err',e.message); }
+      }
+    } catch(e){ console.warn('enrichment skipped:',e.message); }
+
+    window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator,loans,total,enrichedProps,enrichedLoans}},'*');
+  } catch(e){
+    window.opener.postMessage({type:'MM_TOKEN_AUTO',error:e.message},'*');
+  }
+  setTimeout(()=>window.close(),300);
+})()`.replace(/\n\s*/g,' ');
 
   // Open popup on app.modelmatch.com
   const popup = window.open(
@@ -875,20 +980,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if(e.data.data) {
       hideFetchModal();
-      // Got full loan data back from popup running on app.modelmatch.com
-      const {originator, loans, total} = e.data.data;
+      const {originator, loans, total, enrichedProps, enrichedLoans} = e.data.data;
       state.searchResult = originator;
       state.originatorId = originator?.id;
       state.nmls = originator?.nmls_id;
       state.loans = loans || [];
       state.totalLoans = total || 0;
+      if(enrichedProps && Object.keys(enrichedProps).length) state.enrichedProps = enrichedProps;
+      if(enrichedLoans && Object.keys(enrichedLoans).length) state.enrichedLoans = enrichedLoans;
       $("token-modal").classList.add("hidden");
       $("token-banner").classList.add("hidden");
       renderProfile(originator);
       renderLoans();
       $("results").style.display = "block";
-      setStatus("✓ " + state.loans.length + " qualifying loans found for " + (originator?.name||""), "ok");
-      enrichInBackground();
+      const eCount = Object.keys(state.enrichedProps).length;
+      const rCount = Object.keys(state.enrichedLoans).length;
+      setStatus("✓ " + state.loans.length + " loans for " + (originator?.name||"") + (eCount?" · "+eCount+" enriched · "+rCount+" rates":""), "ok");
+      if(eCount) $("enrich-status").textContent = "✓ "+eCount+" properties enriched · "+rCount+" rates loaded";
     } else if(e.data.error) {
       setStatus("Error: " + e.data.error, "err");
     } else if(e.data.token) {
