@@ -310,7 +310,7 @@ async function mmGet(mmPath) {
 
 async function enrichGet(table) {
   const token = await getInsightsToken();
-  if(!token) throw new Error("Could not get insights token — make sure insights.modelmatch.com is open in another tab");
+  if(!token) return { records: [], error: "Enrichment unavailable (CORS)" };
   const res = await fetch(`/api/enrich?table=${table}`, {
     headers: {
       "x-app-auth": sessionStorage.getItem(SESSION_KEY+"_hash")||AUTH_HASH,
@@ -337,32 +337,11 @@ async function enrichGet(table) {
   return res.json();
 }
 
-// Gets a fresh JWT from insights.modelmatch.com using the browser's own session cookie
-// Works because the browser already has the HttpOnly cookie — we just proxy the refresh call
+// Enrichment via insights.modelmatch.com is CORS-blocked from our domain
+// Returns null gracefully - enriched data is optional
 async function getInsightsToken() {
-  // Cache token for 55 minutes (tokens last 60 min)
-  if(state.insightsToken && state.insightsToken.expiry > Date.now()) {
-    return state.insightsToken;
-  }
-  try {
-    // Call insights /refresh endpoint — browser sends its own session cookie automatically
-    const r = await fetch("https://insights.modelmatch.com/refresh", {
-      method: "POST",
-      credentials: "include", // sends the browser's insights cookie
-    });
-    if(!r.ok) return null;
-    const data = await r.json();
-    if(!data.isAuthenticated || !data.accessToken) return null;
-    state.insightsToken = {
-      accessToken: data.accessToken,
-      userId: data.user,
-      expiry: Date.now() + 55 * 60 * 1000, // cache for 55 min
-    };
-    return state.insightsToken;
-  } catch(e) {
-    console.warn("insights token fetch failed:", e.message);
-    return null;
-  }
+  if(state.insightsToken && state.insightsToken.expiry > Date.now()) return state.insightsToken;
+  return null; // CORS blocks insights.modelmatch.com/refresh from our domain
 }
 
 // ── SEARCH ───────────────────────────────────────────────
@@ -606,7 +585,7 @@ async function runSearch() {
   const nmls = $("nmls-input").value.trim().replace(/\D/g,"");
   if(!nmls){ setStatus("Enter a valid NMLS ID","err"); return; }
 
-  // Reset per-search state but keep cached token
+  // Reset state
   const cachedInsights = state.insightsToken;
   const cachedMm = state.mmToken;
   state = { nmls, originatorId:null, searchResult:null, originatorData:null, loans:[], enrichedProps:{}, enrichedLoans:{}, totalLoans:0, insightsToken: cachedInsights, mmToken: cachedMm };
@@ -616,47 +595,104 @@ async function runSearch() {
   $("pull-label").textContent="Searching…";
   $("enrich-status").textContent="";
 
-  try {
-    // Step 1: Search by NMLS
-    setStatus(`Looking up NMLS ${nmls}…`);
-    const src = await searchByNmls(nmls);
-    state.searchResult = src;
-    state.originatorId = src.id;
+  setStatus(`Fetching data for NMLS ${nmls} via ModelMatch…`);
 
-    setStatus(`Found ${src.name} — loading loans…`);
-    renderProfile(src);
+  // Always use popup approach - fetches data directly from app.modelmatch.com (no CORS/auth issues)
+  sessionStorage.setItem('lo_intel_nmls', nmls);
+  
+  const popup = window.open(
+    'https://app.modelmatch.com/fieldmarketingmovementcom/market-insights/search?nmls='+nmls,
+    'mm_data_popup',
+    'width=700,height=500,menubar=no,toolbar=no,location=yes,status=no'
+  );
 
-    // Step 2: Load all loans (excluding Movement Mortgage)
-    const { loans, total } = await getLoans(src.id);
-    state.loans = loans;
-    state.totalLoans = total;
-
-    renderLoans();
-    $("results").style.display="block";
-    setStatus(`✓ ${loans.length} qualifying loans found for ${src.name} (${total} total, Movement Mortgage excluded)`, "ok");
-
-    // Step 3: Load enriched data in background
-    enrichInBackground();
-
-  } catch(err) {
-    const msg = err.message || "";
-    if(msg.includes("401") || msg.includes("Session expired") || msg.includes("Unauthorized")) {
-      setStatus("Session expired — refresh your ModelMatch token using the banner above", "err");
-      showTokenBanner();
-    } else {
-      setStatus("Error: "+msg, "err");
-    }
-    console.error(err);
-  } finally {
+  if(!popup) {
+    setStatus("Popup blocked! Please allow popups for this site.", "err");
     $("pull-btn").disabled=false;
     $("spinner").style.display="none";
     $("pull-label").textContent="Pull Data";
+    showTokenBanner();
+    return;
   }
+
+  setStatus("Popup opened — loading data from ModelMatch…");
+
+  // Inject data-fetch script once popup loads on app.modelmatch.com
+  const interval = setInterval(() => {
+    try {
+      if(popup.closed) {
+        clearInterval(interval);
+        $("pull-btn").disabled=false;
+        $("spinner").style.display="none";
+        $("pull-label").textContent="Pull Data";
+        return;
+      }
+      const href = popup.location.href;
+      if(href && href.includes('app.modelmatch.com') && !href.includes('auth.modelmatch.com')) {
+        clearInterval(interval);
+        try {
+          const s = popup.document.createElement('script');
+          s.textContent = `
+            (async function() {
+              try {
+                const nmls = new URLSearchParams(window.location.search).get('nmls') || sessionStorage.getItem('lo_intel_nmls') || '${nmls}';
+                // Step 1: Search
+                const sr = await fetch('/api/search/lo/search?loNmlsId='+nmls+'&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume', {credentials:'include'});
+                const sd = await sr.json();
+                const hits = sd?.hits?.hits || [];
+                const src = hits.find(h=>h._source?.nmls_id===String(nmls))||hits[0];
+                if(!src) { window.opener.postMessage({type:'MM_TOKEN_AUTO',error:'No LO found for NMLS '+nmls},'*'); window.close(); return; }
+                
+                // Step 2: Get all loans
+                const id = src._source.id;
+                let loans=[], from=0, total=null;
+                while(true) {
+                  const tr = await fetch('/api/originators/'+id+'/transactions?dateRange=last_14_months&limit=200&from='+from+'&sort_field=tx_date&sort_order=desc', {credentials:'include',headers:{'x-organization-id':'5Zh2dlrSnPPZGRJaC2hI53RPB8aqQSBf'}});
+                  const td = await tr.json();
+                  const txs = td?.transactions||[];
+                  if(total===null) total=td?.total||txs.length;
+                  const filtered=txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179'&&!!(t.address?.streetAddress||t.property_address));
+                  loans.push(...filtered);
+                  from+=200;
+                  if(txs.length<200||from>=total) break;
+                }
+                window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator:src._source,loans,total}},'*');
+              } catch(e) {
+                window.opener.postMessage({type:'MM_TOKEN_AUTO',error:e.message},'*');
+              }
+              setTimeout(()=>window.close(),500);
+            })();
+          `;
+          popup.document.head.appendChild(s);
+        } catch(e2) {
+          // Script injection blocked - show manual instructions
+          clearInterval(interval);
+          $("pull-btn").disabled=false;
+          $("spinner").style.display="none";
+          $("pull-label").textContent="Pull Data";
+          setStatus("Script injection blocked — use manual token refresh", "err");
+          showTokenBanner();
+        }
+      }
+    } catch(e) { /* still loading */ }
+  }, 500);
+
+  // Timeout after 30s
+  setTimeout(() => {
+    clearInterval(interval);
+    if(popup && !popup.closed) popup.close();
+    if($("pull-btn").disabled) {
+      $("pull-btn").disabled=false;
+      $("spinner").style.display="none";
+      $("pull-label").textContent="Pull Data";
+      setStatus("Timed out — please try again", "err");
+    }
+  }, 30000);
 }
 
 async function enrichInBackground() {
   $("enrich-status").textContent="⟳ Loading enriched data…";
-  $("export-btn").disabled=true;
+  $("export-btn").disabled=false; // Export works without enrichment
 
   try {
     const [propData, loanData] = await Promise.all([
