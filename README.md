@@ -1,6 +1,6 @@
-# LO Intel — GitHub Pages Edition
+# LO Intel v3 — Vercel Edition
 
-Single-file, password-protected LO data tool. Uses ModelMatch session cookies directly — **no backend, no Vercel, no API keys to manage.**
+Password-protected LO data tool. Vercel proxies all ModelMatch API calls server-side using a stored session token — no CORS issues, no token exposed to the browser.
 
 ---
 
@@ -8,34 +8,34 @@ Single-file, password-protected LO data tool. Uses ModelMatch session cookies di
 
 ```
 lo-intel/
-├── index.html                  ← Everything (UI + logic)
-├── .gitignore
-├── README.md
-└── .github/
-    └── workflows/
-        └── deploy.yml          ← Injects secret + deploys to Pages
+├── index.html              ← Full UI (single file)
+├── api/
+│   └── mm.js              ← Vercel proxy → ModelMatch API
+├── vercel.json
+├── package.json
+└── README.md
 ```
 
 ---
 
-## How It Works
-
-1. User logs in with username/password (checked against SHA-256 hash)
-2. App calls `app.modelmatch.com/api/` directly using the user's existing session cookie
-3. Results render inline — profile, stats, full transaction history
-4. One click exports to Excel (SheetJS, client-side)
-
-**No proxy needed** — the API is on the same domain as the ModelMatch app, so session cookies work seamlessly.
-
----
-
-## Setup (10 min)
+## Deploy to Vercel
 
 ### 1. Push to GitHub
-Create a new repo and push all files.
+Create a repo and push all files.
 
-### 2. Generate your AUTH_HASH
-Open any browser tab → F12 → Console:
+### 2. Import to Vercel
+- vercel.com → New Project → import repo
+- Framework: **Other**
+
+### 3. Add Environment Variables (Vercel → Settings → Environment Variables)
+
+| Variable | Value |
+|---|---|
+| `AUTH_HASH` | SHA-256 hash of `username:password` |
+| `MM_SESSION_TOKEN` | `QAvHyOzVf913u6PL46Fkw0qrXCpAfBdP` |
+
+### 4. Generate AUTH_HASH
+Open any browser → F12 → Console:
 ```js
 const str = "yourusername:yourpassword";
 const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
@@ -43,28 +43,21 @@ const hash = Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0
 console.log(hash);
 ```
 
-### 3. Add GitHub Secret
-Repo → Settings → Secrets → Actions → New secret:
-- Name: `AUTH_HASH`
-- Value: the hash from step 2
-
-### 4. Enable GitHub Pages
-Repo → Settings → Pages → Source: **GitHub Actions**
-
-### 5. Push to main
-GitHub Actions builds and deploys automatically.
-
-**Your URL:** `https://yourusername.github.io/your-repo-name/`
+### 5. Deploy
+Push to main → Vercel auto-deploys. Your URL:
+```
+https://your-project.vercel.app
+```
 
 ---
 
-## Important
+## Session Token Refresh
 
-The user must be **logged into app.modelmatch.com** in the same browser for the API calls to work (session cookie required). This tool is designed for internal team use where everyone has a ModelMatch account.
-
----
-
-## Changing Password
-1. Generate new hash with new `username:password`
-2. Update `AUTH_HASH` secret in GitHub
-3. Push any commit to redeploy — no code changes needed
+The `MM_SESSION_TOKEN` expires **May 20, 2026**. When it expires:
+1. Log into app.modelmatch.com
+2. Open DevTools → Console → paste:
+   ```js
+   fetch('https://auth.modelmatch.com/api/auth/get-session', {credentials:'include'})
+     .then(r=>r.json()).then(d=>console.log(d.session.token))
+   ```
+3. Copy the new token → update `MM_SESSION_TOKEN` in Vercel env vars → redeploy
