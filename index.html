@@ -9,419 +9,148 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#060608;--card:#0d0d12;--border:#1a1a26;--border2:#252535;
+      --green:#00ff88;--blue:#2563ff;--red:#ff3355;--amber:#ffaa00;
+      --text:#eeeef5;--muted:#4a4a6a;--muted2:#6a6a8a;
+    }
+    html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Chivo',sans-serif;overflow-x:hidden;}
+    body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+      background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");opacity:0.4;}
+    .orb{position:fixed;border-radius:50%;pointer-events:none;z-index:0;filter:blur(80px);opacity:0.10;}
+    .orb-1{width:600px;height:600px;background:var(--green);top:-200px;right:-100px;}
+    .orb-2{width:400px;height:400px;background:var(--blue);bottom:-100px;left:-100px;}
+    .screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;transition:opacity 0.5s,transform 0.5s;}
+    .screen.hidden{opacity:0;pointer-events:none;transform:translateY(16px);}
 
-    :root {
-      --bg:       #060608;
-      --card:     #0d0d12;
-      --border:   #1a1a26;
-      --border2:  #252535;
-      --green:    #00ff88;
-      --green2:   #00cc6a;
-      --blue:     #2563ff;
-      --red:      #ff3355;
-      --text:     #eeeef5;
-      --muted:    #4a4a6a;
-      --muted2:   #6a6a8a;
-    }
+    /* LOGIN */
+    #login-screen{flex-direction:column;}
+    .login-wrap{position:relative;z-index:1;width:100%;max-width:400px;padding:0 20px;}
+    .login-logo{font-family:'Bebas Neue',sans-serif;font-size:56px;letter-spacing:0.06em;line-height:1;margin-bottom:4px;background:linear-gradient(135deg,var(--green),#00aaff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+    .login-tagline{font-family:'Chivo Mono',monospace;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted2);margin-bottom:48px;}
+    .login-card{background:var(--card);border:1px solid var(--border2);border-radius:2px;padding:36px 32px;position:relative;overflow:hidden;}
+    .login-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--green),transparent);}
+    .field{margin-bottom:20px;}
+    .field label{display:block;font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted2);margin-bottom:8px;}
+    .field input{width:100%;padding:12px 14px;background:#080810;border:1px solid var(--border2);border-radius:2px;color:var(--text);font-family:'Chivo Mono',monospace;font-size:14px;outline:none;transition:border-color 0.2s,box-shadow 0.2s;}
+    .field input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(0,255,136,0.08);}
+    .btn-login{width:100%;padding:14px;background:var(--green);color:#000;border:none;border-radius:2px;font-family:'Chivo Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;cursor:pointer;transition:opacity 0.2s,box-shadow 0.2s;}
+    .btn-login:hover{opacity:0.9;box-shadow:0 0 24px rgba(0,255,136,0.3);}
+    .btn-login:disabled{opacity:0.4;cursor:not-allowed;}
+    .login-error{margin-top:14px;text-align:center;font-family:'Chivo Mono',monospace;font-size:11px;color:var(--red);opacity:0;transition:opacity 0.2s;}
+    .login-error.show{opacity:1;}
 
-    html,body { height:100%; background:var(--bg); color:var(--text); font-family:'Chivo',sans-serif; overflow-x:hidden; }
+    /* APP */
+    #app-screen{flex-direction:column;align-items:stretch;}
+    .topbar{position:fixed;top:0;left:0;right:0;height:52px;z-index:100;background:rgba(6,6,8,0.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 28px;}
+    .top-logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:0.1em;background:linear-gradient(135deg,var(--green),#00aaff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+    .top-right{display:flex;align-items:center;gap:16px;}
+    .top-user{font-family:'Chivo Mono',monospace;font-size:10px;color:var(--muted2);letter-spacing:0.1em;}
+    .btn-sm{font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted2);background:none;border:1px solid var(--border2);padding:6px 14px;border-radius:2px;cursor:pointer;transition:color 0.2s,border-color 0.2s;}
+    .btn-sm:hover{color:var(--text);border-color:var(--muted2);}
+    .main{margin-top:52px;padding:48px 28px;max-width:1200px;width:100%;margin-left:auto;margin-right:auto;position:relative;z-index:1;}
 
-    /* ── NOISE TEXTURE ── */
-    body::before {
-      content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-      opacity: 0.4;
-    }
+    /* HERO */
+    .hero{margin-bottom:40px;}
+    .hero-label{font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.25em;text-transform:uppercase;color:var(--green);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+    .hero-label::before{content:'';width:20px;height:1px;background:var(--green);}
+    .hero-title{font-family:'Bebas Neue',sans-serif;font-size:clamp(48px,6vw,80px);line-height:0.95;letter-spacing:0.04em;margin-bottom:12px;}
+    .hero-title em{color:var(--green);font-style:normal;}
+    .hero-sub{font-size:14px;color:var(--muted2);line-height:1.6;font-weight:300;max-width:600px;}
 
-    /* ── GLOW ORBS ── */
-    .orb {
-      position:fixed; border-radius:50%; pointer-events:none; z-index:0;
-      filter: blur(80px); opacity: 0.12;
-    }
-    .orb-1 { width:600px; height:600px; background:var(--green); top:-200px; right:-100px; }
-    .orb-2 { width:400px; height:400px; background:var(--blue); bottom:-100px; left:-100px; }
+    /* SEARCH BAR */
+    .search-bar{display:flex;gap:0;margin-bottom:16px;border:1px solid var(--border2);border-radius:2px;overflow:hidden;background:var(--card);transition:border-color 0.2s,box-shadow 0.2s;}
+    .search-bar:focus-within{border-color:var(--green);box-shadow:0 0 0 3px rgba(0,255,136,0.06);}
+    .search-label-wrap{display:flex;align-items:center;gap:10px;padding:0 20px;border-right:1px solid var(--border2);white-space:nowrap;}
+    .search-label-wrap span{font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);}
+    #nmls-input{flex:1;padding:18px 20px;background:transparent;border:none;color:var(--text);font-family:'Chivo Mono',monospace;font-size:22px;letter-spacing:0.12em;outline:none;}
+    #nmls-input::placeholder{color:var(--border2);}
+    .btn-pull{padding:0 32px;background:var(--green);color:#000;border:none;cursor:pointer;font-family:'Chivo Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;display:flex;align-items:center;gap:10px;transition:opacity 0.2s;white-space:nowrap;}
+    .btn-pull:hover{opacity:0.88;}
+    .btn-pull:disabled{opacity:0.35;cursor:not-allowed;}
+    .spinner{width:14px;height:14px;border:2px solid rgba(0,0,0,0.25);border-top-color:#000;border-radius:50%;animation:spin 0.6s linear infinite;display:none;}
+    @keyframes spin{to{transform:rotate(360deg);}}
 
-    /* ── SCREENS ── */
-    .screen { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10; transition: opacity 0.5s, transform 0.5s; }
-    .screen.hidden { opacity:0; pointer-events:none; transform:translateY(16px); }
+    /* STATUS */
+    .status{font-family:'Chivo Mono',monospace;font-size:11px;color:var(--muted2);margin-bottom:32px;letter-spacing:0.06em;min-height:16px;}
+    .status.ok{color:var(--green);}
+    .status.err{color:var(--red);}
+    .status.warn{color:var(--amber);}
 
-    /* ══ LOGIN ══ */
-    #login-screen { flex-direction:column; }
+    /* PROFILE CARD */
+    #results{display:none;animation:fadeUp 0.4s ease;}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+    .profile{background:var(--card);border:1px solid var(--border2);border-radius:2px;padding:28px 32px;margin-bottom:24px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;position:relative;overflow:hidden;}
+    .profile::before{content:'';position:absolute;top:0;left:0;bottom:0;width:3px;background:linear-gradient(180deg,var(--green),var(--blue));}
+    .profile-name{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.04em;line-height:1;margin-bottom:4px;}
+    .profile-nmls{font-family:'Chivo Mono',monospace;font-size:11px;color:var(--green);letter-spacing:0.12em;margin-bottom:12px;}
+    .profile-company{font-size:13px;color:var(--muted2);margin-bottom:2px;}
+    .stat-mini{background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:12px 14px;}
+    .stat-mini-k{font-family:'Chivo Mono',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
+    .stat-mini-v{font-family:'Chivo Mono',monospace;font-size:16px;font-weight:700;color:var(--green);}
+    .stat-mini-v.plain{color:var(--text);font-size:13px;}
+    .stats-col{display:flex;flex-direction:column;gap:10px;}
+    .contact-col{display:flex;flex-direction:column;gap:8px;}
+    .contact-row{display:flex;gap:8px;align-items:flex-start;font-size:12px;}
+    .contact-key{font-family:'Chivo Mono',monospace;font-size:8px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);width:56px;flex-shrink:0;padding-top:2px;}
+    .contact-val{color:var(--text);word-break:break-all;}
 
-    .login-wrap {
-      position:relative; z-index:1;
-      width:100%; max-width:400px; padding: 0 20px;
-    }
+    /* RESULTS HEADER */
+    .results-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;}
+    .results-hed{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:0.06em;}
+    .results-hed em{color:var(--green);font-style:normal;}
+    .results-actions{display:flex;gap:10px;align-items:center;}
+    .btn-export{font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:var(--green);background:transparent;border:1px solid var(--green);padding:10px 20px;border-radius:2px;cursor:pointer;transition:background 0.2s,color 0.2s,box-shadow 0.2s;display:flex;align-items:center;gap:8px;}
+    .btn-export:hover{background:var(--green);color:#000;box-shadow:0 0 20px rgba(0,255,136,0.25);}
+    .btn-export:disabled{opacity:0.4;cursor:not-allowed;}
+    .enrich-status{font-family:'Chivo Mono',monospace;font-size:10px;color:var(--amber);letter-spacing:0.08em;}
 
-    .login-logo {
-      font-family:'Bebas Neue',sans-serif;
-      font-size:56px; letter-spacing:0.06em;
-      line-height:1; margin-bottom:4px;
-      background: linear-gradient(135deg, var(--green), #00aaff);
-      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-    }
+    /* TABLE */
+    .table-wrap{border:1px solid var(--border2);border-radius:2px;overflow-x:auto;max-height:600px;overflow-y:auto;}
+    table{width:100%;border-collapse:collapse;font-size:11px;}
+    thead{background:var(--bg);position:sticky;top:0;z-index:2;}
+    th{font-family:'Chivo Mono',monospace;font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);padding:10px 14px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border2);}
+    td{padding:9px 14px;border-bottom:1px solid rgba(26,26,38,0.6);font-family:'Chivo Mono',monospace;white-space:nowrap;color:var(--text);}
+    tr:last-child td{border-bottom:none;}
+    tr:hover td{background:rgba(0,255,136,0.025);}
+    td.green{color:var(--green);font-weight:700;}
+    td.blue{color:#6699ff;}
+    td.muted{color:var(--muted2);}
+    td.amber{color:var(--amber);}
+    .badge{display:inline-block;padding:2px 7px;border-radius:1px;font-size:7px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;}
+    .badge-purchase{background:rgba(37,99,255,0.15);color:#6699ff;}
+    .badge-refi{background:rgba(0,255,136,0.1);color:var(--green);}
+    .badge-other{background:rgba(255,255,255,0.05);color:var(--muted2);}
+    .enriched-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:4px;vertical-align:middle;}
+    .pending-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--amber);margin-right:4px;vertical-align:middle;}
 
-    .login-tagline {
-      font-family:'Chivo Mono',monospace;
-      font-size:11px; letter-spacing:0.18em; text-transform:uppercase;
-      color:var(--muted2); margin-bottom:48px;
-    }
-
-    .login-card {
-      background:var(--card);
-      border:1px solid var(--border2);
-      border-radius:2px;
-      padding:36px 32px;
-      position:relative; overflow:hidden;
-    }
-
-    .login-card::before {
-      content:''; position:absolute; top:0; left:0; right:0; height:1px;
-      background: linear-gradient(90deg, transparent, var(--green), transparent);
-    }
-
-    .field { margin-bottom:20px; }
-    .field label {
-      display:block; font-family:'Chivo Mono',monospace;
-      font-size:9px; letter-spacing:0.2em; text-transform:uppercase;
-      color:var(--muted2); margin-bottom:8px;
-    }
-    .field input {
-      width:100%; padding:12px 14px;
-      background:#080810; border:1px solid var(--border2);
-      border-radius:2px; color:var(--text);
-      font-family:'Chivo Mono',monospace; font-size:14px;
-      outline:none; transition:border-color 0.2s, box-shadow 0.2s;
-    }
-    .field input:focus {
-      border-color:var(--green);
-      box-shadow: 0 0 0 3px rgba(0,255,136,0.08);
-    }
-
-    .btn-login {
-      width:100%; padding:14px;
-      background:var(--green); color:#000;
-      border:none; border-radius:2px;
-      font-family:'Chivo Mono',monospace; font-size:11px;
-      font-weight:700; letter-spacing:0.15em; text-transform:uppercase;
-      cursor:pointer; margin-top:8px;
-      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
-      position:relative; overflow:hidden;
-    }
-    .btn-login::after {
-      content:''; position:absolute; inset:0;
-      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
-      transform:translateX(-100%); transition:transform 0.4s;
-    }
-    .btn-login:hover::after { transform:translateX(100%); }
-    .btn-login:hover { opacity:0.9; box-shadow: 0 0 24px rgba(0,255,136,0.3); }
-    .btn-login:active { transform:scale(0.98); }
-    .btn-login:disabled { opacity:0.4; cursor:not-allowed; }
-
-    .login-error {
-      margin-top:14px; text-align:center;
-      font-family:'Chivo Mono',monospace; font-size:11px;
-      color:var(--red); opacity:0; transition:opacity 0.2s;
-    }
-    .login-error.show { opacity:1; }
-
-    /* ══ APP ══ */
-    #app-screen { flex-direction:column; align-items:stretch; }
-
-    .topbar {
-      position:fixed; top:0; left:0; right:0; height:52px; z-index:100;
-      background:rgba(6,6,8,0.85); backdrop-filter:blur(16px);
-      border-bottom:1px solid var(--border);
-      display:flex; align-items:center; justify-content:space-between;
-      padding:0 28px;
-    }
-
-    .top-logo {
-      font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:0.1em;
-      background:linear-gradient(135deg, var(--green), #00aaff);
-      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-    }
-
-    .top-right { display:flex; align-items:center; gap:16px; }
-
-    .top-user {
-      font-family:'Chivo Mono',monospace; font-size:10px;
-      color:var(--muted2); letter-spacing:0.1em;
-    }
-
-    .btn-sm {
-      font-family:'Chivo Mono',monospace; font-size:9px;
-      letter-spacing:0.15em; text-transform:uppercase;
-      color:var(--muted2); background:none;
-      border:1px solid var(--border2); padding:6px 14px;
-      border-radius:2px; cursor:pointer;
-      transition:color 0.2s, border-color 0.2s;
-    }
-    .btn-sm:hover { color:var(--text); border-color:var(--muted2); }
-
-    .main {
-      margin-top:52px; padding:48px 28px;
-      max-width:1100px; width:100%; margin-left:auto; margin-right:auto;
-      position:relative; z-index:1;
-    }
-
-    /* ── HERO ── */
-    .hero { margin-bottom:40px; }
-    .hero-label {
-      font-family:'Chivo Mono',monospace; font-size:9px;
-      letter-spacing:0.25em; text-transform:uppercase;
-      color:var(--green); margin-bottom:10px;
-      display:flex; align-items:center; gap:8px;
-    }
-    .hero-label::before {
-      content:''; width:20px; height:1px; background:var(--green);
-    }
-    .hero-title {
-      font-family:'Bebas Neue',sans-serif;
-      font-size:clamp(48px,6vw,80px); line-height:0.95;
-      letter-spacing:0.04em; margin-bottom:12px;
-    }
-    .hero-title em { color:var(--green); font-style:normal; }
-    .hero-sub {
-      font-size:14px; color:var(--muted2); line-height:1.6;
-      font-weight:300; max-width:500px;
-    }
-
-    /* ── SEARCH ── */
-    .search-bar {
-      display:flex; gap:0; margin-bottom:40px;
-      border:1px solid var(--border2); border-radius:2px;
-      overflow:hidden; background:var(--card);
-      transition:border-color 0.2s, box-shadow 0.2s;
-    }
-    .search-bar:focus-within {
-      border-color:var(--green);
-      box-shadow: 0 0 0 3px rgba(0,255,136,0.06);
-    }
-
-    .search-label-wrap {
-      display:flex; align-items:center; gap:10px;
-      padding:0 20px; border-right:1px solid var(--border2);
-      white-space:nowrap;
-    }
-    .search-label-wrap span {
-      font-family:'Chivo Mono',monospace; font-size:9px;
-      letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);
-    }
-
-    #nmls-input {
-      flex:1; padding:18px 20px;
-      background:transparent; border:none;
-      color:var(--text); font-family:'Chivo Mono',monospace;
-      font-size:22px; letter-spacing:0.12em; outline:none;
-    }
-    #nmls-input::placeholder { color:var(--border2); }
-
-    .btn-pull {
-      padding:0 32px; background:var(--green); color:#000;
-      border:none; cursor:pointer;
-      font-family:'Chivo Mono',monospace; font-size:10px;
-      font-weight:700; letter-spacing:0.18em; text-transform:uppercase;
-      display:flex; align-items:center; gap:10px;
-      transition:opacity 0.2s;
-      white-space:nowrap;
-    }
-    .btn-pull:hover { opacity:0.88; }
-    .btn-pull:disabled { opacity:0.35; cursor:not-allowed; }
-
-    .spinner {
-      width:14px; height:14px;
-      border:2px solid rgba(0,0,0,0.25);
-      border-top-color:#000; border-radius:50%;
-      animation:spin 0.6s linear infinite; display:none;
-    }
-    @keyframes spin { to { transform:rotate(360deg); } }
-
-    .status {
-      font-family:'Chivo Mono',monospace; font-size:11px;
-      color:var(--muted2); margin-top:-28px; margin-bottom:36px;
-      letter-spacing:0.06em; min-height:16px;
-    }
-    .status.ok { color:var(--green); }
-    .status.err { color:var(--red); }
-
-    /* ── RESULTS ── */
-    #results { display:none; animation:fadeUp 0.4s ease; }
-    @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-
-    /* profile card */
-    .profile {
-      background:var(--card); border:1px solid var(--border2);
-      border-radius:2px; padding:32px; margin-bottom:24px;
-      display:grid; grid-template-columns:1fr 1fr; gap:32px;
-      position:relative; overflow:hidden;
-    }
-    .profile::before {
-      content:''; position:absolute; top:0; left:0; bottom:0; width:3px;
-      background:linear-gradient(180deg, var(--green), var(--blue));
-    }
-
-    .profile-name {
-      font-family:'Bebas Neue',sans-serif;
-      font-size:40px; letter-spacing:0.04em; line-height:1;
-      margin-bottom:4px;
-    }
-    .profile-nmls {
-      font-family:'Chivo Mono',monospace; font-size:11px;
-      color:var(--green); letter-spacing:0.12em; margin-bottom:16px;
-    }
-    .profile-company { font-size:14px; color:var(--muted2); font-weight:300; margin-bottom:4px; }
-    .profile-location { font-size:13px; color:var(--muted); }
-
-    .contact-list { list-style:none; }
-    .contact-list li {
-      display:flex; align-items:flex-start; gap:10px;
-      padding:8px 0; border-bottom:1px solid var(--border);
-      font-size:13px;
-    }
-    .contact-list li:last-child { border-bottom:none; }
-    .contact-key {
-      font-family:'Chivo Mono',monospace; font-size:9px;
-      letter-spacing:0.15em; text-transform:uppercase;
-      color:var(--muted); width:70px; flex-shrink:0; padding-top:2px;
-    }
-    .contact-val { color:var(--text); word-break:break-all; }
-
-    .stats-row {
-      grid-column:1/-1;
-      display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
-      gap:12px; padding-top:24px; border-top:1px solid var(--border);
-    }
-    .stat {
-      background:var(--bg); border:1px solid var(--border);
-      border-radius:2px; padding:14px 16px;
-    }
-    .stat-k {
-      font-family:'Chivo Mono',monospace; font-size:8px;
-      letter-spacing:0.18em; text-transform:uppercase;
-      color:var(--muted); margin-bottom:6px;
-    }
-    .stat-v {
-      font-family:'Chivo Mono',monospace; font-size:20px;
-      font-weight:700; color:var(--green);
-    }
-    .stat-v.plain { color:var(--text); font-size:16px; }
-
-    /* results header */
-    .results-head {
-      display:flex; align-items:center; justify-content:space-between;
-      margin-bottom:16px; flex-wrap:wrap; gap:12px;
-    }
-    .results-hed {
-      font-family:'Bebas Neue',sans-serif; font-size:28px;
-      letter-spacing:0.06em;
-    }
-    .results-hed em { color:var(--green); font-style:normal; }
-
-    .btn-export {
-      font-family:'Chivo Mono',monospace; font-size:9px;
-      letter-spacing:0.15em; text-transform:uppercase;
-      color:var(--green); background:transparent;
-      border:1px solid var(--green); padding:10px 20px;
-      border-radius:2px; cursor:pointer;
-      transition:background 0.2s, color 0.2s, box-shadow 0.2s;
-      display:flex; align-items:center; gap:8px;
-    }
-    .btn-export:hover {
-      background:var(--green); color:#000;
-      box-shadow:0 0 20px rgba(0,255,136,0.25);
-    }
-
-    /* table */
-    .table-wrap {
-      border:1px solid var(--border2); border-radius:2px;
-      overflow-x:auto;
-    }
-    table { width:100%; border-collapse:collapse; font-size:12px; }
-    thead { background:var(--bg); position:sticky; top:0; z-index:2; }
-    th {
-      font-family:'Chivo Mono',monospace; font-size:8px;
-      letter-spacing:0.15em; text-transform:uppercase;
-      color:var(--muted); padding:12px 16px; text-align:left;
-      white-space:nowrap; border-bottom:1px solid var(--border2);
-    }
-    td {
-      padding:11px 16px; border-bottom:1px solid rgba(26,26,38,0.8);
-      font-family:'Chivo Mono',monospace; white-space:nowrap;
-      color:var(--text);
-    }
-    tr:last-child td { border-bottom:none; }
-    tr:hover td { background:rgba(0,255,136,0.025); }
-
-    td.green { color:var(--green); font-weight:700; }
-    td.blue { color:#6699ff; }
-    td.muted { color:var(--muted2); }
-
-    .badge {
-      display:inline-block; padding:2px 8px; border-radius:1px;
-      font-size:8px; letter-spacing:0.1em; text-transform:uppercase; font-weight:700;
-    }
-    .badge-purchase { background:rgba(37,99,255,0.15); color:#6699ff; }
-    .badge-refi     { background:rgba(0,255,136,0.1); color:var(--green); }
-    .badge-other    { background:rgba(255,255,255,0.05); color:var(--muted2); }
-
-    /* pagination */
-    .pagination {
-      display:flex; align-items:center; gap:8px;
-      padding:16px; border-top:1px solid var(--border);
-      font-family:'Chivo Mono',monospace; font-size:10px; color:var(--muted2);
-    }
-    .page-btn {
-      padding:6px 14px; background:transparent;
-      border:1px solid var(--border2); border-radius:2px;
-      color:var(--muted2); cursor:pointer; font-family:'Chivo Mono',monospace;
-      font-size:9px; letter-spacing:0.1em; transition:all 0.15s;
-    }
-    .page-btn:hover:not(:disabled) { border-color:var(--green); color:var(--green); }
-    .page-btn:disabled { opacity:0.3; cursor:not-allowed; }
-
-    /* empty */
-    .empty {
-      text-align:center; padding:80px 32px;
-      font-family:'Chivo Mono',monospace; font-size:11px;
-      color:var(--muted); letter-spacing:0.1em;
-    }
-    .empty-icon { font-size:32px; margin-bottom:12px; opacity:0.2; }
-
-    @media(max-width:700px) {
-      .profile { grid-template-columns:1fr; }
-      .search-label-wrap { display:none; }
-      .main { padding:32px 16px; }
-      .hero-title { font-size:40px; }
+    @media(max-width:700px){
+      .profile{grid-template-columns:1fr;}
+      .search-label-wrap{display:none;}
+      .main{padding:32px 16px;}
+      .hero-title{font-size:40px;}
     }
   </style>
 </head>
 <body>
-
 <div class="orb orb-1"></div>
 <div class="orb orb-2"></div>
 
-<!-- ══ LOGIN ══ -->
+<!-- LOGIN -->
 <div class="screen" id="login-screen">
   <div class="login-wrap">
     <div class="login-logo">LO Intel</div>
     <div class="login-tagline">ModelMatch · Powered Intelligence</div>
     <div class="login-card">
-      <div class="field">
-        <label>Username</label>
-        <input type="text" id="un" autocomplete="username" placeholder="username"/>
-      </div>
-      <div class="field">
-        <label>Password</label>
-        <input type="password" id="pw" autocomplete="current-password" placeholder="••••••••"/>
-      </div>
+      <div class="field"><label>Username</label><input type="text" id="un" autocomplete="username" placeholder="username"/></div>
+      <div class="field"><label>Password</label><input type="password" id="pw" autocomplete="current-password" placeholder="••••••••"/></div>
       <button class="btn-login" id="login-btn">Enter Platform</button>
       <div class="login-error" id="login-err">Invalid credentials</div>
     </div>
   </div>
 </div>
 
-<!-- ══ APP ══ -->
+<!-- APP -->
 <div class="screen hidden" id="app-screen">
   <div class="topbar">
     <div class="top-logo">LO Intel</div>
@@ -433,16 +162,14 @@
 
   <div class="main">
     <div class="hero">
-      <div class="hero-label">ModelMatch · Live Data</div>
+      <div class="hero-label">ModelMatch · Insights · Powered</div>
       <div class="hero-title">Loan Officer<br><em>Intelligence</em></div>
-      <div class="hero-sub">Enter an NMLS ID to pull full contact info, loan history, interest rates, and borrower insights. Export to Excel in one click.</div>
+      <div class="hero-sub">Enter an NMLS ID to pull loan history with full borrower contact info, interest rates, demographics, and equity data. Excludes Movement Mortgage loans. Exports to Excel with all 57 fields.</div>
     </div>
 
     <div class="search-bar">
-      <div class="search-label-wrap">
-        <span>NMLS ID</span>
-      </div>
-      <input type="text" id="nmls-input" placeholder="e.g. 493599" maxlength="10"/>
+      <div class="search-label-wrap"><span>NMLS ID</span></div>
+      <input type="text" id="nmls-input" placeholder="e.g. 116199" maxlength="10"/>
       <button class="btn-pull" id="pull-btn">
         <span class="spinner" id="spinner"></span>
         <span id="pull-label">Pull Data</span>
@@ -452,395 +179,483 @@
 
     <div id="results">
       <div id="profile-area"></div>
-
       <div class="results-head">
-        <div class="results-hed">Transaction <em>History</em></div>
-        <button class="btn-export" id="export-btn">↓ Download Excel</button>
+        <div class="results-hed">Loan <em>History</em></div>
+        <div class="results-actions">
+          <div class="enrich-status" id="enrich-status"></div>
+          <button class="btn-export" id="export-btn">↓ Download Excel</button>
+        </div>
       </div>
-      <div id="tx-area"></div>
-      <div id="pagination-area"></div>
+      <div id="loans-area"></div>
     </div>
   </div>
 </div>
 
 <script>
-// ─────────────────────────────────────────────
-// CONFIG — injected by GitHub Actions
-// ─────────────────────────────────────────────
+// ── CONFIG ──────────────────────────────────────────────
 const AUTH_HASH = "34185e26eda78419381432bc62450210ff3f3be29f495a999feb9bd53e1b5631";
 const SESSION_KEY = "lo_intel_v3";
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 200; // pull large batches
 
-// ─────────────────────────────────────────────
-// STATE
-// ─────────────────────────────────────────────
+// ── STATE ────────────────────────────────────────────────
 let state = {
-  originatorId: null,
-  originatorData: null,
-  transactions: [],
-  totalTx: 0,
-  page: 0,
   nmls: null,
+  originatorId: null,
+  searchResult: null,
+  originatorData: null,
+  loans: [],
+  enrichedProps: {},
+  enrichedLoans: {},
+  totalLoans: 0,
+  insightsToken: null, // cached JWT from insights.modelmatch.com/refresh
 };
 
-// ─────────────────────────────────────────────
-// UTILS
-// ─────────────────────────────────────────────
+// ── UTILS ────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
-
 async function sha256(str) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
 }
+function fmt(v){ return v != null && v !== "" ? v : "—"; }
+function fmtM(v){ if(!v) return "—"; const n=Number(v); return n>=1e9?"$"+(n/1e9).toFixed(2)+"B":n>=1e6?"$"+(n/1e6).toFixed(2)+"M":n>=1e3?"$"+(n/1e3).toFixed(0)+"K":"$"+n.toFixed(0); }
+function fmtD(v){ if(!v) return "—"; const d=new Date(v); return isNaN(d)?v:d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }
+function badge(type){ if(!type) return `<span class="badge badge-other">—</span>`; const t=type.toLowerCase(); if(t.includes("purchase")) return `<span class="badge badge-purchase">${type}</span>`; if(t.includes("refi")||t.includes("refinance")) return `<span class="badge badge-refi">${type}</span>`; return `<span class="badge badge-other">${type}</span>`; }
+function setStatus(msg, cls=""){ const el=$("status"); el.textContent=msg; el.className="status "+cls; }
+function showScreen(id){ document.querySelectorAll(".screen").forEach(s=>s.classList.add("hidden")); $(id).classList.remove("hidden"); }
+function isLoggedIn(){ return !!sessionStorage.getItem(SESSION_KEY); }
+function getUser(){ return sessionStorage.getItem(SESSION_KEY)||""; }
 
-function fmt(v)    { return v ?? "—"; }
-function fmtM(v)   { if(!v) return "—"; const n=Number(v); return n>=1e9?"$"+(n/1e9).toFixed(2)+"B":n>=1e6?"$"+(n/1e6).toFixed(2)+"M":n>=1e3?"$"+(n/1e3).toFixed(0)+"K":"$"+n.toFixed(0); }
-function fmtD(v)   { if(!v) return "—"; const d=new Date(v); return isNaN(d)? v: d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }
-function fmtR(v)   { if(!v) return "—"; return Number(v).toFixed(3)+"%"; }
-function fmtFull(v){ if(!v) return "—"; return "$"+Number(v).toLocaleString("en-US",{maximumFractionDigits:0}); }
+// ── AUTH ─────────────────────────────────────────────────
+async function tryLogin(u,p){ return await sha256(`${u}:${p}`) === AUTH_HASH; }
 
-function badge(type) {
-  if(!type) return `<span class="badge badge-other">—</span>`;
-  const t=type.toLowerCase();
-  if(t.includes("purchase")) return `<span class="badge badge-purchase">${type}</span>`;
-  if(t.includes("refi")||t.includes("refinance")) return `<span class="badge badge-refi">${type}</span>`;
-  return `<span class="badge badge-other">${type}</span>`;
-}
-
-function setStatus(msg, cls="") {
-  const el=$("status");
-  el.textContent=msg; el.className="status "+cls;
-}
-
-function showScreen(id) {
-  document.querySelectorAll(".screen").forEach(s=>s.classList.add("hidden"));
-  $(id).classList.remove("hidden");
-}
-
-// ─────────────────────────────────────────────
-// AUTH
-// ─────────────────────────────────────────────
-async function tryLogin(u, p) {
-  const hash = await sha256(`${u}:${p}`);
-  return hash === AUTH_HASH;
-}
-function isLoggedIn() { return !!sessionStorage.getItem(SESSION_KEY); }
-function saveSession(u) { sessionStorage.setItem(SESSION_KEY, u); }
-function getUser() { return sessionStorage.getItem(SESSION_KEY)||""; }
-
-// ─────────────────────────────────────────────
-// API — routes through Vercel proxy (handles CORS + session)
-// ─────────────────────────────────────────────
+// ── API ──────────────────────────────────────────────────
 async function mmGet(mmPath) {
-  // Encode the MM path, forward all params through our proxy
   const [basePath, qs] = mmPath.split("?");
-  const proxyUrl = "/api/mm?path=" + encodeURIComponent(basePath) + (qs ? "&" + qs : "");
-  const res = await fetch(proxyUrl, {
-    headers: { "x-app-auth": sessionStorage.getItem(SESSION_KEY) || "" }
-  });
-  if(!res.ok) throw new Error(`${res.status} ${res.statusText} — ${mmPath}`);
+  const proxyUrl = "/api/mm?path=" + encodeURIComponent(basePath) + (qs?"&"+qs:"");
+  const res = await fetch(proxyUrl, { headers:{"x-app-auth": sessionStorage.getItem(SESSION_KEY)||""} });
+  if(!res.ok) throw new Error(`${res.status} — ${mmPath}`);
   return res.json();
 }
 
-// Step 1: Search by NMLS → get internal ID
+async function enrichGet(table) {
+  const token = await getInsightsToken();
+  if(!token) throw new Error("Could not get insights token — make sure insights.modelmatch.com is open in another tab");
+  const res = await fetch(`/api/enrich?table=${table}`, {
+    headers: {
+      "x-app-auth": sessionStorage.getItem(SESSION_KEY)||"",
+      "x-mm-token": token.accessToken,
+      "x-mm-user": token.userId,
+    }
+  });
+  // Token expired mid-session — refresh and retry once
+  if(res.status === 401) {
+    state.insightsToken = null;
+    const newToken = await getInsightsToken();
+    if(!newToken) throw new Error("Token refresh failed");
+    const retry = await fetch(`/api/enrich?table=${table}`, {
+      headers: {
+        "x-app-auth": sessionStorage.getItem(SESSION_KEY)||"",
+        "x-mm-token": newToken.accessToken,
+        "x-mm-user": newToken.userId,
+      }
+    });
+    if(!retry.ok) throw new Error(`Enrich ${table} failed after retry: ${retry.status}`);
+    return retry.json();
+  }
+  if(!res.ok) throw new Error(`Enrich ${table} failed: ${res.status}`);
+  return res.json();
+}
+
+// Gets a fresh JWT from insights.modelmatch.com using the browser's own session cookie
+// Works because the browser already has the HttpOnly cookie — we just proxy the refresh call
+async function getInsightsToken() {
+  // Cache token for 55 minutes (tokens last 60 min)
+  if(state.insightsToken && state.insightsToken.expiry > Date.now()) {
+    return state.insightsToken;
+  }
+  try {
+    // Call insights /refresh endpoint — browser sends its own session cookie automatically
+    const r = await fetch("https://insights.modelmatch.com/refresh", {
+      method: "POST",
+      credentials: "include", // sends the browser's insights cookie
+    });
+    if(!r.ok) return null;
+    const data = await r.json();
+    if(!data.isAuthenticated || !data.accessToken) return null;
+    state.insightsToken = {
+      accessToken: data.accessToken,
+      userId: data.user,
+      expiry: Date.now() + 55 * 60 * 1000, // cache for 55 min
+    };
+    return state.insightsToken;
+  } catch(e) {
+    console.warn("insights token fetch failed:", e.message);
+    return null;
+  }
+}
+
+// ── SEARCH ───────────────────────────────────────────────
 async function searchByNmls(nmls) {
   const data = await mmGet(`/api/search/lo/search?loNmlsId=${nmls}&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume`);
   const hits = data?.hits?.hits || [];
-  // Find exact NMLS match
   const exact = hits.find(h => h._source?.nmls_id === String(nmls)) || hits[0];
   if(!exact) throw new Error(`No loan officer found for NMLS ${nmls}`);
   return exact._source;
 }
 
-// Step 2: Get full profile using internal ID
-async function getOriginator(id) {
-  return mmGet(`/api/originators/${id}?date_range=last_14_months`);
+async function getLoans(internalId) {
+  // Pull all loans in batches of 200, excluding Movement Mortgage (39179)
+  let from = 0;
+  let all = [];
+  let total = null;
+  while(true) {
+    const data = await mmGet(`/api/originators/${internalId}/transactions?dateRange=last_14_months&limit=${PAGE_SIZE}&from=${from}&sort_field=tx_date&sort_order=desc`);
+    const txs = data?.transactions || [];
+    const t = data?.total ?? txs.length;
+    if(total === null) total = t;
+
+    // Filter: exclude Movement Mortgage loans, only include those with address
+    const filtered = txs.filter(tx => {
+      const isMovement = (tx.loanCompany?.nmlsId === "39179" || tx.employerNmlsId === "39179");
+      const hasAddress = !!(tx.property_address || tx.address?.streetAddress || tx.address);
+      return !isMovement && hasAddress;
+    });
+    all.push(...filtered);
+
+    from += PAGE_SIZE;
+    if(txs.length < PAGE_SIZE || from >= total) break;
+    setStatus(`Loading loans… ${all.length} so far`);
+  }
+  return { loans: all, total };
 }
 
-// Step 3: Get transactions using internal ID
-async function getTransactions(id, page=0) {
-  const from = page * PAGE_SIZE;
-  return mmGet(`/api/originators/${id}/transactions?dateRange=last_14_months&limit=${PAGE_SIZE}&from=${from}&sort_field=tx_date&sort_order=desc`);
-}
-
-// ─────────────────────────────────────────────
-// RENDER PROFILE
-// ─────────────────────────────────────────────
-function renderProfile(src, orig) {
-  // src = search result _source, orig = full originator profile
-  const o = orig || {};
-  const name     = o.name || src?.name || "Loan Officer";
-  const nmls     = o.nmls_id || src?.nmls_id || state.nmls;
-  const company  = o.company_name || src?.company_name || "";
-  const city     = o.city || src?.city || "";
-  const st       = o.state || src?.state || "";
-  const zip      = o.zip_code || src?.zip_code || "";
-  const addr     = o.address || src?.address || "";
-  const phone    = o.cell_phone || o.phone || src?.cell_phone || src?.phone || "";
-  const email    = o.email || src?.email || "";
-  const linkedin = o.linkedin_url || o.linkedin || "";
-
-  const stats = o.overall_stats || src?.overall_stats || {};
-  const vol   = stats.volume || 0;
-  const units = stats.units || 0;
-  const pPct  = stats.purchase_pct || 0;
-  const rPct  = stats.refi_pct || 0;
-  const avgLoan = vol && units ? vol/units : 0;
-
-  const contacts = [
-    {k:"Phone",   v:phone},
-    {k:"Email",   v:email},
-    {k:"Address", v:[addr,city,st,zip].filter(Boolean).join(", ")},
-    {k:"Company", v:company},
-    {k:"LinkedIn",v:linkedin},
-  ].filter(c=>c.v);
-
+// ── RENDER PROFILE ────────────────────────────────────────
+function renderProfile(src) {
+  const o = src || {};
+  const stats = o.overall_stats || {};
   $("profile-area").innerHTML = `
     <div class="profile">
       <div>
-        <div class="profile-name">${name}</div>
-        <div class="profile-nmls">NMLS# ${nmls}</div>
-        <div class="profile-company">${company}</div>
-        <div class="profile-location">${[city,st].filter(Boolean).join(", ")}</div>
+        <div class="profile-name">${o.name||"Loan Officer"}</div>
+        <div class="profile-nmls">NMLS# ${o.nmls_id||state.nmls}</div>
+        <div class="profile-company">${o.company_name||""}</div>
+        <div class="profile-company" style="color:var(--muted)">${[o.city,o.state].filter(Boolean).join(", ")}</div>
       </div>
-      <div>
-        <ul class="contact-list">
-          ${contacts.map(c=>`
-            <li>
-              <span class="contact-key">${c.k}</span>
-              <span class="contact-val">${c.v}</span>
-            </li>`).join("")}
-        </ul>
+      <div class="stats-col">
+        <div class="stat-mini"><div class="stat-mini-k">Total Volume</div><div class="stat-mini-v">${fmtM(stats.volume)}</div></div>
+        <div class="stat-mini"><div class="stat-mini-k">Units Closed</div><div class="stat-mini-v">${stats.units||"—"}</div></div>
+        <div class="stat-mini"><div class="stat-mini-k">Avg Loan</div><div class="stat-mini-v">${stats.volume&&stats.units?fmtM(stats.volume/stats.units):"—"}</div></div>
       </div>
-      <div class="stats-row">
-        <div class="stat"><div class="stat-k">Total Volume</div><div class="stat-v">${fmtM(vol)}</div></div>
-        <div class="stat"><div class="stat-k">Units Closed</div><div class="stat-v">${units}</div></div>
-        <div class="stat"><div class="stat-k">Avg Loan Size</div><div class="stat-v">${fmtM(avgLoan)}</div></div>
-        <div class="stat"><div class="stat-k">Purchase %</div><div class="stat-v">${pPct}%</div></div>
-        <div class="stat"><div class="stat-k">Refi %</div><div class="stat-v">${rPct}%</div></div>
-        <div class="stat"><div class="stat-k">NMLS ID</div><div class="stat-v plain">${nmls}</div></div>
+      <div class="contact-col">
+        ${o.phone?`<div class="contact-row"><span class="contact-key">Phone</span><span class="contact-val">${o.phone}</span></div>`:""}
+        ${o.email?`<div class="contact-row"><span class="contact-key">Email</span><span class="contact-val">${o.email}</span></div>`:""}
+        ${o.company_name?`<div class="contact-row"><span class="contact-key">Company</span><span class="contact-val">${o.company_name}</span></div>`:""}
+        ${o.linkedin_url?`<div class="contact-row"><span class="contact-key">LinkedIn</span><span class="contact-val">${o.linkedin_url}</span></div>`:""}
       </div>
     </div>`;
 }
 
-// ─────────────────────────────────────────────
-// RENDER TRANSACTIONS
-// ─────────────────────────────────────────────
-function renderTransactions(txData) {
-  const hits  = txData?.hits?.hits || [];
-  const total = txData?.hits?.total?.value || 0;
-  state.totalTx = total;
-
-  if(!hits.length) {
-    $("tx-area").innerHTML = `<div class="empty"><div class="empty-icon">◎</div>No transactions found</div>`;
-    $("pagination-area").innerHTML = "";
+// ── RENDER LOANS ──────────────────────────────────────────
+function renderLoans() {
+  const loans = state.loans;
+  if(!loans.length) {
+    $("loans-area").innerHTML = `<div style="text-align:center;padding:64px;font-family:'Chivo Mono',monospace;font-size:11px;color:var(--muted)">No qualifying loans found (excluding Movement Mortgage loans)</div>`;
     return;
   }
 
-  // Collect all transactions for export
-  if(state.page === 0) state.transactions = [];
-  hits.forEach(h => state.transactions.push(h._source || h));
+  const rows = loans.map((l,i) => {
+    const ep = state.enrichedProps[l.propertyId] || {};
+    const el = state.enrichedLoans[l.id] || {};
+    const borrower = Array.isArray(l.borrower) ? l.borrower[0] : l.borrower;
+    const bName = borrower?.name || [borrower?.firstName, borrower?.lastName].filter(Boolean).join(" ") || "—";
+    const addr = l.address?.streetAddress || l.property_address || "—";
+    const rate = el.interestRate || ep["Interest Rate"] || "—";
+    const phone = ep["Borrower Phone Number"] || "—";
+    const email = ep["Borrower Email Address"] || "—";
+    const isEnriched = Object.keys(ep).length > 0;
 
-  const rows = hits.map(h => {
-    const t = h._source || h;
-    const type = t.transaction_type || t.type || "";
-    const loanType = t.loan_type || "";
-    return `<tr>
-      <td class="muted">${fmtD(t.tx_date || t.close_date || t.date)}</td>
-      <td>${badge(type)}</td>
-      <td>${loanType ? `<span class="badge badge-other">${loanType}</span>` : "—"}</td>
-      <td class="green">${fmtR(t.interest_rate || t.rate)}</td>
-      <td class="blue">${fmtFull(t.loan_amount || t.amount)}</td>
-      <td>${fmt(t.borrower_name || t.borrower || t.buyer_name)}</td>
-      <td class="muted">${fmt(t.borrower_email || t.email)}</td>
-      <td class="muted">${fmt(t.borrower_phone || t.phone)}</td>
-      <td class="muted">${fmt(t.property_address || t.address)}</td>
-      <td class="muted">${fmt(t.lender || t.lender_name)}</td>
+    return `<tr data-idx="${i}">
+      <td class="muted">${fmtD(l.tx_date||l.mortgageDate||l.close_date)}</td>
+      <td>${badge(l.mm_loan_transaction_type||l.transactionType||l.transaction_type)}</td>
+      <td>${l.mm_loan_type||l.loanType||"—"}</td>
+      <td class="green">${rate !== "—" ? rate+"%" : "—"}</td>
+      <td class="blue">$${Number(l.loan_amount||l.mortgage||0).toLocaleString()}</td>
+      <td>${isEnriched?"<span class='enriched-dot'></span>":""}<span>${bName}</span></td>
+      <td class="${phone!=="—"?"amber":"muted"}">${phone}</td>
+      <td class="${email!=="—"?"amber":"muted"}">${email}</td>
+      <td class="muted">${addr}</td>
+      <td class="muted">${l.lenderName||l.lender?.name||"—"}</td>
     </tr>`;
   }).join("");
 
-  $("tx-area").innerHTML = `
+  $("loans-area").innerHTML = `
     <div class="table-wrap">
       <table>
-        <thead>
-          <tr>
-            <th>Date</th><th>Type</th><th>Loan Type</th><th>Rate</th>
-            <th>Amount</th><th>Borrower</th><th>Email</th><th>Phone</th>
-            <th>Property</th><th>Lender</th>
-          </tr>
-        </thead>
+        <thead><tr>
+          <th>Date</th><th>Type</th><th>Loan</th><th>Rate</th><th>Amount</th>
+          <th>Borrower</th><th>Phone</th><th>Email</th><th>Property</th><th>Lender</th>
+        </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
-
-  // Pagination
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-  const cur = state.page + 1;
-  $("pagination-area").innerHTML = `
-    <div class="pagination">
-      <button class="page-btn" id="prev-btn" ${state.page===0?"disabled":""}>← Prev</button>
-      <span>Page ${cur} of ${totalPages} &nbsp;·&nbsp; ${total.toLocaleString()} total</span>
-      <button class="page-btn" id="next-btn" ${cur>=totalPages?"disabled":""}>Next →</button>
-    </div>`;
-
-  $("prev-btn")?.addEventListener("click", () => loadPage(state.page - 1));
-  $("next-btn")?.addEventListener("click", () => loadPage(state.page + 1));
 }
 
-async function loadPage(page) {
-  state.page = page;
-  setStatus(`Loading page ${page+1}…`);
-  try {
-    const txData = await getTransactions(state.originatorId, page);
-    renderTransactions(txData);
-    setStatus(`Showing page ${page+1}`, "ok");
-  } catch(e) {
-    setStatus("Error loading page: "+e.message, "err");
-  }
-}
-
-// ─────────────────────────────────────────────
-// EXCEL EXPORT
-// ─────────────────────────────────────────────
+// ── EXCEL EXPORT ──────────────────────────────────────────
 function exportExcel() {
   const wb = XLSX.utils.book_new();
-  const o  = state.originatorData || {};
-  const src= state.searchResult   || {};
+  const o = state.searchResult || {};
 
-  // Sheet 1 — Profile
-  const profRows = [
-    ["LO Intel Export"],
+  // Sheet 1 — LO Profile
+  const profileRows = [
+    ["LO Intel Export — Movement Mortgage Competitor Analysis"],
     [],
-    ["Name",        o.name || src.name || ""],
-    ["NMLS ID",     o.nmls_id || src.nmls_id || state.nmls],
-    ["Company",     o.company_name || src.company_name || ""],
-    ["Phone",       o.cell_phone || o.phone || src.cell_phone || ""],
-    ["Email",       o.email || src.email || ""],
-    ["Address",     [o.address||src.address, o.city||src.city, o.state||src.state, o.zip_code||src.zip_code].filter(Boolean).join(", ")],
+    ["Name", o.name||""],
+    ["NMLS ID", o.nmls_id||state.nmls],
+    ["Company", o.company_name||""],
+    ["Phone", o.phone||""],
+    ["Email", o.email||""],
+    ["Address", [o.address,o.city,o.state,o.zip_code].filter(Boolean).join(", ")],
+    ["LinkedIn", o.linkedin_url||""],
     [],
-    ["Total Volume",  (o.overall_stats||src.overall_stats||{}).volume || ""],
-    ["Units Closed",  (o.overall_stats||src.overall_stats||{}).units  || ""],
-    ["Purchase %",    (o.overall_stats||src.overall_stats||{}).purchase_pct || ""],
-    ["Refi %",        (o.overall_stats||src.overall_stats||{}).refi_pct || ""],
+    ["Total Volume", (o.overall_stats||{}).volume||""],
+    ["Units Closed", (o.overall_stats||{}).units||""],
+    ["Purchase %", (o.overall_stats||{}).purchase_pct||""],
+    ["Refi %", (o.overall_stats||{}).refi_pct||""],
+    ["Total Loans Pulled", state.loans.length],
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(profRows), "Profile");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(profileRows), "LO Profile");
 
-  // Sheet 2 — Transactions
-  if(state.transactions.length) {
-    const hdrs = ["Date","Transaction Type","Loan Type","Interest Rate","Loan Amount","Borrower","Email","Phone","Property Address","Lender"];
-    const txRows = state.transactions.map(t => [
-      t.tx_date||t.close_date||t.date||"",
-      t.transaction_type||t.type||"",
-      t.loan_type||"",
-      t.interest_rate||t.rate||"",
-      t.loan_amount||t.amount||"",
-      t.borrower_name||t.borrower||t.buyer_name||"",
-      t.borrower_email||t.email||"",
-      t.borrower_phone||t.phone||"",
-      t.property_address||t.address||"",
-      t.lender||t.lender_name||"",
-    ]);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([hdrs,...txRows]), "Transactions");
-  }
+  // Sheet 2 — All 57 fields matching insights.modelmatch.com export format
+  const headers = [
+    "Borrower Status","Street Address","City","State","Zip Code","County",
+    "Borrower First Name","Borrower Middle Name","Borrower Last Name",
+    "Borrower Phone Number Type","Borrower Phone Number","Borrower Phone Number DNC",
+    "Borrower Phone 2 Type","Borrower Phone Number 2","Borrower Phone Number 2 DNC",
+    "Borrower Email Address","Borrower Email Address 2",
+    "Equity","Equity Balance","Equity Percentage","LTV Current","LTV time of loan",
+    "Price Range Min","Price Range Max",
+    "Interest Rate","Mortgage Amount","Sale Price",
+    "Loan Type","Transaction Type",
+    "Loan Originator","Loan Originator NMLS ID",
+    "Employer","Employer NMLS ID",
+    "Loan Company","Loan Company NMLS ID",
+    "Broker","Broker NMLS ID","Lender",
+    "Mortgage Date","Sale Date",
+    "Buyer Agent Name","Buyer Agent First Name","Buyer Agent Last Name",
+    "Buyer Agent Phone Number","Buyer Agent Email Address","Buyer Agent Agency",
+    "Listing Agent Name","Listing Agent Email","Listing Agent Phone",
+    "Listing Agent First Name","Listing Agent Last Name","Listing Agent Agency",
+    "Title Company",
+    "Discretionary Income","Net Worth","Recently Divorced","Income",
+    "Has Children","Child Count","Owner Occupied","TCPA"
+  ];
 
-  const safeName = (o.name||src.name||"LO").replace(/\s+/g,"_");
-  XLSX.writeFile(wb, `LO_${safeName}_${state.nmls}_${Date.now()}.xlsx`);
+  const loanRows = state.loans.map(l => {
+    const ep = state.enrichedProps[l.propertyId] || {};
+    const el = state.enrichedLoans[l.id] || {};
+    const borrowers = Array.isArray(l.borrower) ? l.borrower : [l.borrower].filter(Boolean);
+    const b1 = borrowers[0] || {};
+    const addr = l.address || {};
+    const rate = el.interestRate || ep["Interest Rate"] || "";
+
+    // Use enriched data if available, fall back to raw loan data
+    return [
+      ep["Borrower Status"] || l.borrowerStatus || "",
+      ep["Street Address"] || addr.streetAddress || l.property_address || "",
+      ep["City"] || addr.city || "",
+      ep["State"] || addr.state || "",
+      ep["Zip Code"] || addr.zipCode || "",
+      ep["County"] || addr.county || "",
+      ep["Borrower First Name"] || b1.firstName || "",
+      ep["Borrower Middle Name"] || b1.middleName || "",
+      ep["Borrower Last Name"] || b1.lastName || "",
+      ep["Borrower Phone Number Type"] || "",
+      ep["Borrower Phone Number"] || "",
+      ep["Borrower Phone Number DNC"] || "No",
+      ep["Borrower Phone 2 Type"] || "",
+      ep["Borrower Phone Number 2"] || "",
+      ep["Borrower Phone Number 2 DNC"] || "No",
+      ep["Borrower Email Address"] || "",
+      ep["Borrower Email Address 2"] || "",
+      ep["Equity"] || "",
+      ep["Equity Balance"] || "",
+      ep["Equity Percentage"] || "",
+      ep["LTV Current"] || "",
+      ep["LTV time of loan"] || l.loanToValue || "",
+      ep["Price Range Min"] || "",
+      ep["Price Range Max"] || "",
+      rate,
+      ep["Mortgage Amount"] || (l.loan_amount||l.mortgage ? "$"+Number(l.loan_amount||l.mortgage).toLocaleString() : ""),
+      ep["Sale Price"] || l.salePrice || "",
+      ep["Loan Type"] || l.mm_loan_type || l.loanType || "",
+      ep["Transaction Type"] || l.mm_loan_transaction_type || l.transactionType || "",
+      ep["Loan Originator"] || l.loanOriginator?.name || "",
+      ep["Loan Originator NMLS ID"] || l.loanOriginator?.nmlsId || "",
+      ep["Employer"] || (l.employers||[])[0]?.name || l.employerName || "",
+      ep["Employer NMLS ID"] || (l.employers||[])[0]?.nmlsId || l.employerNmlsId || "",
+      ep["Loan Company"] || l.loanCompany?.name || "",
+      ep["Loan Company NMLS ID"] || l.loanCompany?.nmlsId || "",
+      ep["Broker"] || l.broker?.name || "",
+      ep["Broker NMLS ID"] || l.broker?.nmlsId || l.brokerNmlsId || "",
+      ep["Lender"] || l.lenderName || l.lender?.name || "",
+      ep["Mortgage Date"] || fmtD(l.mortgageDate||l.tx_date||l.close_date),
+      ep["Sale Date"] || fmtD(l.saleDate||l.tx_date),
+      ep["Buyer Agent Name"] || l.buyerSideAgent?.name || "",
+      ep["Buyer Agent First Name"] || l.buyerSideAgent?.firstName || "",
+      ep["Buyer Agent Last Name"] || l.buyerSideAgent?.lastName || "",
+      ep["Buyer Agent Phone Number"] || l.buyerSideAgency?.phone || "",
+      ep["Buyer Agent Email Address"] || "",
+      ep["Buyer Agent Agency"] || l.buyerSideAgency?.name || "",
+      ep["Listing Agent Name"] || l.sellerSideAgent?.name || "",
+      ep["Listing Agent Email"] || "",
+      ep["Listing Agent Phone"] || l.sellerSideAgency?.phone || "",
+      ep["Listing Agent First Name"] || l.sellerSideAgent?.firstName || "",
+      ep["Listing Agent Last Name"] || l.sellerSideAgent?.lastName || "",
+      ep["Listing Agent Agency"] || l.sellerSideAgency?.name || "",
+      ep["Title Company"] || l.titleCompany || "",
+      ep["Discretionary Income"] || "",
+      ep["Net Worth"] || "",
+      ep["Recently Divorced"] || "No",
+      ep["Income"] || "",
+      ep["Has Children"] || "No",
+      ep["Child Count"] || "",
+      ep["Owner Occupied"] || "",
+      ep["TCPA"] || "No",
+    ];
+  });
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, ...loanRows]), "Loan Data");
+
+  const safeName = (o.name||"LO").replace(/\s+/g,"_");
+  XLSX.writeFile(wb, `LO_${safeName}_NMLS${state.nmls}_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
-// ─────────────────────────────────────────────
-// MAIN SEARCH
-// ─────────────────────────────────────────────
+// ── MAIN SEARCH ───────────────────────────────────────────
 async function runSearch() {
   const nmls = $("nmls-input").value.trim().replace(/\D/g,"");
-  if(!nmls) { setStatus("Enter a valid NMLS ID", "err"); return; }
+  if(!nmls){ setStatus("Enter a valid NMLS ID","err"); return; }
 
-  // Reset state
-  state = { originatorId:null, originatorData:null, transactions:[], totalTx:0, page:0, nmls };
-  $("results").style.display = "none";
-  $("pull-btn").disabled = true;
-  $("spinner").style.display = "inline-block";
-  $("pull-label").textContent = "Searching…";
-  setStatus(`Looking up NMLS ${nmls}…`);
+  // Reset per-search state but keep cached token
+  const cachedToken = state.insightsToken;
+  state = { nmls, originatorId:null, searchResult:null, originatorData:null, loans:[], enrichedProps:{}, enrichedLoans:{}, totalLoans:0, insightsToken: cachedToken };
+  $("results").style.display="none";
+  $("pull-btn").disabled=true;
+  $("spinner").style.display="inline-block";
+  $("pull-label").textContent="Searching…";
+  $("enrich-status").textContent="";
 
   try {
-    // Step 1: Search
-    setStatus("Searching for NMLS "+nmls+"…");
+    // Step 1: Search by NMLS
+    setStatus(`Looking up NMLS ${nmls}…`);
     const src = await searchByNmls(nmls);
     state.searchResult = src;
     state.originatorId = src.id;
 
-    const name = src.name || `NMLS ${nmls}`;
-    setStatus(`Found ${name} — loading profile…`);
+    setStatus(`Found ${src.name} — loading loans…`);
+    renderProfile(src);
 
-    // Step 2: Full profile + transactions in parallel
-    const [orig, txData] = await Promise.all([
-      getOriginator(src.id).catch(()=>null),
-      getTransactions(src.id, 0),
-    ]);
+    // Step 2: Load all loans (excluding Movement Mortgage)
+    const { loans, total } = await getLoans(src.id);
+    state.loans = loans;
+    state.totalLoans = total;
 
-    state.originatorData = orig;
+    renderLoans();
+    $("results").style.display="block";
+    setStatus(`✓ ${loans.length} qualifying loans found for ${src.name} (${total} total, Movement Mortgage excluded)`, "ok");
 
-    // Render
-    renderProfile(src, orig);
-    renderTransactions(txData);
-
-    $("results").style.display = "block";
-    setStatus(`✓ ${state.totalTx} transactions found for ${name}`, "ok");
+    // Step 3: Load enriched data in background
+    enrichInBackground();
 
   } catch(err) {
     setStatus("Error: "+err.message, "err");
     console.error(err);
   } finally {
-    $("pull-btn").disabled = false;
-    $("spinner").style.display = "none";
-    $("pull-label").textContent = "Pull Data";
+    $("pull-btn").disabled=false;
+    $("spinner").style.display="none";
+    $("pull-label").textContent="Pull Data";
   }
 }
 
-// ─────────────────────────────────────────────
-// INIT
-// ─────────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", () => {
-  if(isLoggedIn()) {
-    showScreen("app-screen");
-    $("top-user").textContent = getUser();
-  }
+async function enrichInBackground() {
+  $("enrich-status").textContent="⟳ Loading enriched data…";
+  $("export-btn").disabled=true;
 
-  // Login
+  try {
+    const [propData, loanData] = await Promise.all([
+      enrichGet("enriched_property").catch(e => ({ records:[], error:e.message })),
+      enrichGet("enriched_loan").catch(e => ({ records:[], error:e.message })),
+    ]);
+
+    // Index enriched property data by property ID or loan ID
+    if(propData.records) {
+      propData.records.forEach(r => {
+        if(r.value) {
+          const v = r.value;
+          // Key by property address for matching
+          const key = v["Street Address"]?.toLowerCase().trim();
+          if(key) state.enrichedProps[key] = v;
+        }
+      });
+    }
+
+    // Index enriched loan data by loan ID
+    if(loanData.records) {
+      loanData.records.forEach(r => {
+        if(r.value) {
+          const v = r.value;
+          if(v.loanID) state.enrichedLoans[v.loanID] = v;
+        }
+      });
+    }
+
+    // Re-match enriched data to loans by address
+    state.loans.forEach(l => {
+      const addr = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
+      if(addr && state.enrichedProps[addr]) {
+        l._enriched = state.enrichedProps[addr];
+      }
+      if(l.id && state.enrichedLoans[l.id]) {
+        l._enrichedLoan = state.enrichedLoans[l.id];
+      }
+    });
+
+    const enrichedCount = Object.keys(state.enrichedProps).length;
+    const rateCount = Object.keys(state.enrichedLoans).length;
+
+    $("enrich-status").textContent = enrichedCount > 0 || rateCount > 0
+      ? `✓ ${enrichedCount} properties enriched · ${rateCount} rates loaded`
+      : "⚠ No enriched data available yet — run Enhance in insights first";
+
+    renderLoans(); // re-render with enriched data
+
+  } catch(err) {
+    $("enrich-status").textContent = "⚠ Enriched data unavailable";
+    console.error("Enrich error:", err);
+  } finally {
+    $("export-btn").disabled=false;
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+  if(isLoggedIn()){ showScreen("app-screen"); $("top-user").textContent=getUser(); }
+
   async function attemptLogin() {
     const u=$("un").value.trim(), p=$("pw").value;
     if(!u||!p) return;
     $("login-btn").disabled=true;
-    const ok = await tryLogin(u, p);
+    const ok = await tryLogin(u,p);
     $("login-btn").disabled=false;
-    if(ok) {
-      saveSession(u);
-      $("top-user").textContent = u;
-      showScreen("app-screen");
-    } else {
-      $("login-err").classList.add("show");
-      $("pw").value=""; $("pw").focus();
-      setTimeout(()=>$("login-err").classList.remove("show"), 3000);
-    }
+    if(ok){ sessionStorage.setItem(SESSION_KEY,u); $("top-user").textContent=u; showScreen("app-screen"); }
+    else { $("login-err").classList.add("show"); $("pw").value=""; $("pw").focus(); setTimeout(()=>$("login-err").classList.remove("show"),3000); }
   }
 
   $("login-btn").addEventListener("click", attemptLogin);
   $("pw").addEventListener("keydown", e=>{ if(e.key==="Enter") attemptLogin(); });
   $("un").addEventListener("keydown", e=>{ if(e.key==="Enter") $("pw").focus(); });
-
-  // Logout
-  $("logout-btn").addEventListener("click", ()=>{
-    sessionStorage.removeItem(SESSION_KEY);
-    showScreen("login-screen");
-    $("nmls-input").value="";
-    $("results").style.display="none";
-  });
-
-  // Search
+  $("logout-btn").addEventListener("click", ()=>{ sessionStorage.removeItem(SESSION_KEY); showScreen("login-screen"); $("nmls-input").value=""; $("results").style.display="none"; });
   $("pull-btn").addEventListener("click", runSearch);
   $("nmls-input").addEventListener("keydown", e=>{ if(e.key==="Enter") runSearch(); });
-
-  // Export
   $("export-btn").addEventListener("click", exportExcel);
 });
 </script>
