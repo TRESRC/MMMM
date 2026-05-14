@@ -432,7 +432,7 @@ function renderLoans() {
       <td>${l.mm_loan_type||l.loanType||"—"}</td>
       <td class="green">${rate !== "—" ? rate+"%" : "—"}</td>
       <td class="blue">$${Number(l.loan_amount||l.mortgage||0).toLocaleString()}</td>
-      <td>${isEnriched?"<span class='enriched-dot'></span>":""}<span>${bName}</span></td>
+      <td>${isEnriched?"<span class='enriched-dot'></span>":""}<span>${b1Name}</span></td>
       <td class="${phone!=="—"?"amber":"muted"}">${phone}</td>
       <td class="${email!=="—"?"amber":"muted"}">${email}</td>
       <td class="muted">${addr}</td>
