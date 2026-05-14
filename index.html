@@ -201,15 +201,14 @@
     <div class="token-modal-box">
       <div class="token-modal-title">Refresh ModelMatch Session</div>
       <div class="token-modal-steps">
-        <div class="step"><span class="step-n">1</span>Open <strong>app.modelmatch.com</strong> in a new tab and make sure you're logged in</div>
-        <div class="step"><span class="step-n">2</span>Press <strong>F12</strong> → Console tab → paste this and hit Enter:</div>
-        <div class="token-code">fetch('https://auth.modelmatch.com/api/auth/get-session',{credentials:'include'}).then(r=>r.json()).then(d=>console.log('TOKEN:',d.session.token))</div>
-        <div class="step"><span class="step-n">3</span>Copy the token value that appears</div>
-        <div class="step"><span class="step-n">4</span>Paste it below and click Save</div>
+        <div class="step"><span class="step-n">1</span>Make sure you are logged into <strong>app.modelmatch.com</strong> in this browser</div>
+        <div class="step"><span class="step-n">2</span>Click the button below — it opens a small window, grabs your token automatically, and closes</div>
       </div>
+      <button class="btn-save-token" id="auto-token-btn" style="width:100%;margin-bottom:16px;">&#9889; Get Token Automatically</button>
+      <div style="font-family:'Chivo Mono',monospace;font-size:10px;color:var(--muted2);margin-bottom:12px;text-align:center;">— or paste manually —</div>
       <div class="token-input-row">
         <input type="text" id="token-input" placeholder="Paste token here…"/>
-        <button class="btn-save-token" id="save-token-btn">Save & Continue</button>
+        <button class="btn-save-token" id="save-token-btn">Save</button>
       </div>
       <div class="token-modal-note">This takes effect immediately. You'll need to do this once a week.</div>
       <button class="token-modal-close" id="token-modal-close">Cancel</button>
@@ -288,29 +287,10 @@ async function tryLogin(u,p){ return await sha256(`${u}:${p}`) === AUTH_HASH; }
 // ── API ──────────────────────────────────────────────────
 async function getMmSessionToken() {
   // Cache token for 10 minutes
-  if(state.mmToken && state.mmToken.expiry > Date.now()) {
-    console.log('Using cached MM token');
-    return state.mmToken.value;
-  }
-  try {
-    console.log('Fetching MM token from /api/session...');
-    const r = await fetch("/api/session", {
-      headers: {"x-app-auth": sessionStorage.getItem(SESSION_KEY+"_hash")||AUTH_HASH}
-    });
-    const d = await r.json();
-    console.log('Session response:', r.status, JSON.stringify(d).slice(0,200));
-    if(!r.ok || !d?.token) {
-      // Show banner so user can manually paste token
-      showTokenBanner();
-      return null;
-    }
-    state.mmToken = { value: d.token, expiry: Date.now() + 10*60*1000 };
-    return d.token;
-  } catch(e) { 
-    console.error('getMmSessionToken error:', e.message);
-    showTokenBanner();
-    return null; 
-  }
+  if(state.mmToken && state.mmToken.expiry > Date.now()) return state.mmToken.value;
+  // No token available — show banner for manual entry
+  showTokenBanner();
+  return null;
 }
 
 
@@ -785,6 +765,81 @@ document.addEventListener("DOMContentLoaded", () => {
   $("pull-btn").addEventListener("click", runSearch);
   $("nmls-input").addEventListener("keydown", e=>{ if(e.key==="Enter") runSearch(); });
   $("export-btn").addEventListener("click", exportExcel);
+
+  // Auto-get token via popup window
+  $("auto-token-btn").addEventListener("click", ()=>{
+    $("auto-token-btn").textContent = "Opening… (allow popups if blocked)";
+    $("auto-token-btn").disabled = true;
+    
+    // Open a tiny popup on app.modelmatch.com
+    const popup = window.open(
+      'https://app.modelmatch.com', 
+      'mm_token_popup',
+      'width=600,height=400,menubar=no,toolbar=no,location=yes,status=no'
+    );
+    
+    if(!popup) {
+      alert("Popup was blocked! Please allow popups for this site and try again.");
+      $("auto-token-btn").textContent = "⚡ Get Token Automatically";
+      $("auto-token-btn").disabled = false;
+      return;
+    }
+
+    // Poll until the popup has loaded and we can run our script
+    const interval = setInterval(() => {
+      try {
+        if(popup.closed) {
+          clearInterval(interval);
+          $("auto-token-btn").textContent = "⚡ Get Token Automatically";
+          $("auto-token-btn").disabled = false;
+          return;
+        }
+        // Try to access the popup's location - will throw if cross-origin
+        const href = popup.location.href;
+        if(href && href.includes('app.modelmatch.com') && !href.includes('auth.modelmatch.com')) {
+          // Popup is on the right domain - inject our token fetch
+          popup.eval(`
+            fetch('https://auth.modelmatch.com/api/auth/get-session', {credentials:'include'})
+              .then(r=>r.json())
+              .then(d=>{
+                const t = d?.session?.token;
+                window.opener.postMessage({type:'MM_TOKEN_AUTO', token: t}, '*');
+                window.close();
+              })
+              .catch(e=>{ window.opener.postMessage({type:'MM_TOKEN_AUTO', token:null, error:e.message}, '*'); window.close(); });
+          `);
+          clearInterval(interval);
+        }
+      } catch(e) {
+        // Still loading or cross-origin redirect - keep waiting
+      }
+    }, 500);
+
+    // Timeout after 30s
+    setTimeout(() => {
+      clearInterval(interval);
+      if(!popup.closed) popup.close();
+      $("auto-token-btn").textContent = "⚡ Get Token Automatically";
+      $("auto-token-btn").disabled = false;
+    }, 30000);
+  });
+
+  // Listen for token from popup
+  window.addEventListener('message', (e) => {
+    if(e.data?.type !== 'MM_TOKEN_AUTO') return;
+    if(e.data.token) {
+      state.mmToken = { value: e.data.token, expiry: Date.now() + 10*60*1000 };
+      $("token-modal").classList.add("hidden");
+      $("token-banner").classList.add("hidden");
+      setStatus("✓ Token refreshed! Running search…", "ok");
+      // Auto-retry the search
+      runSearch();
+    } else {
+      alert("Couldn't get token automatically. Please use the manual method below.");
+    }
+    $("auto-token-btn").textContent = "⚡ Get Token Automatically";
+    $("auto-token-btn").disabled = false;
+  });
 
   // Token banner & modal
   $("token-help-link").addEventListener("click", e=>{ e.preventDefault(); $("token-modal").classList.remove("hidden"); });
