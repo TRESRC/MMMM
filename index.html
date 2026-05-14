@@ -639,14 +639,12 @@ async function runSearch() {
     "const rr=await fetch('https://insights.modelmatch.com/refresh',{method:'POST',credentials:'include'});",
     "const rd=await rr.json();const jwt=rd.accessToken;const uid=rd.user;",
     "if(jwt&&uid){",
-    // enriched-property
     "const ps=await fetch('https://api.next.modelmatch.com/shape/enriched-property',{method:'POST',headers:{Authorization:'Bearer '+jwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_property',where:'user_id = $1',params:[uid]}})});",
     "const pd=await ps.json();",
     "if(pd.url){const pr=await fetch(pd.url,{headers:{Authorization:pd.headers.Authorization}});",
     "const pt=await pr.text();",
     "for(const line of pt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value&&item.value['Street Address']){enrichedProps[item.value['Street Address'].toLowerCase().trim()]=item.value;}});}catch{}}",
     "}",
-    // enriched-loan
     "const ls=await fetch('https://api.next.modelmatch.com/shape/enriched-loan',{method:'POST',headers:{Authorization:'Bearer '+jwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_loan',where:'user_id = $1',params:[uid]}})});",
     "const ld=await ls.json();",
     "if(ld.url){const lr=await fetch(ld.url,{headers:{Authorization:ld.headers.Authorization}});",
