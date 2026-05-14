@@ -233,10 +233,13 @@ async function tryLogin(u,p){ return await sha256(`${u}:${p}`) === AUTH_HASH; }
 async function getMmSessionToken() {
   if(state.mmToken && state.mmToken.expiry > Date.now()) return state.mmToken.value;
   try {
-    const r = await fetch("https://auth.modelmatch.com/api/auth/get-session", {credentials:"include"});
+    // Call our own Vercel proxy which fetches the token server-side (no CORS)
+    const r = await fetch("/api/session", {
+      headers: {"x-app-auth": sessionStorage.getItem(SESSION_KEY)||""}
+    });
     if(!r.ok) return null;
     const d = await r.json();
-    const t = d?.session?.token;
+    const t = d?.token;
     if(!t) return null;
     state.mmToken = { value: t, expiry: Date.now() + 30*60*1000 };
     return t;
