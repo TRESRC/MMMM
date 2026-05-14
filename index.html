@@ -698,7 +698,7 @@ async function runSearch() {
   $("pull-btn").disabled=false;
   $("spinner").style.display="none";
   $("pull-label").textContent="Pull Data";
-  setStatus("Follow the steps in the popup instructions…", "warn");
+  setStatus("Popup open — press F12 in popup → Console → paste the command", "warn");
 }
 
 async function enrichInBackground() {
@@ -952,6 +952,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const rCount = Object.keys(state.enrichedLoans).length;
       setStatus("✓ " + state.loans.length + " loans for " + (originator?.name||"") + (eCount?" · "+eCount+" enriched · "+rCount+" rates":""), "ok");
       if(eCount) $("enrich-status").textContent = "✓ "+eCount+" properties enriched · "+rCount+" rates loaded";
+      else $("enrich-status").textContent = "⚠ No enrichment data — run the popup command to enrich";
     } else if(e.data.error) {
       setStatus("Error: " + e.data.error, "err");
     } else if(e.data.token) {
