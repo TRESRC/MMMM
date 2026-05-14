@@ -960,17 +960,14 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus("✓ " + state.loans.length + " loans loaded — opening enrichment popup…", "ok");
       $("enrich-status").textContent = "⧙ Loading contact & rate data…";
 
-      // Step 2: open insights.modelmatch.com popup for enrichment
+      // Step 2: reuse same popup window, navigate to insights for enrichment
       setTimeout(() => {
         if(state.pendingEnrichCmd) {
-          const ep = window.open('https://insights.modelmatch.com/test/loans','mm_enrich_popup','width=900,height=600,menubar=no,toolbar=no,location=yes,status=no');
-          if(ep) {
-            showFetchModal(state.pendingEnrichCmd, "Enrichment");
-            setStatus("✓ " + state.loans.length + " loans — paste enrichment command in insights popup", "ok");
-          } else {
-            $("enrich-status").textContent = "⚠ Allow popups for enrichment data";
-            setStatus("✓ " + state.loans.length + " loans for " + (originator?.name||""), "ok");
-          }
+          // Reuse existing popup by targeting same window name
+          let enrichWin = window.open('https://insights.modelmatch.com/test/loans', 'mm_data_popup', 'width=900,height=600,menubar=no,toolbar=no,location=yes,status=no');
+          setStatus("✓ " + state.loans.length + " loans loaded — paste enrichment command in insights popup", "ok");
+          $("enrich-status").textContent = "⧙ Waiting for enrichment…";
+          showFetchModal(state.pendingEnrichCmd, "Step 2 — Enrich Contact & Rate Data");
         }
       }, 800);
     } else if(e.data.type === 'MM_ENRICH') {
