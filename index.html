@@ -419,7 +419,7 @@ function renderLoans() {
     const ep = state.enrichedProps[addrKey] || {};
     const el = state.enrichedLoans[l.id] || {};
     // Support both flat and nested API structures
-    const b1Name = l.buyer1FirstMiddle && l.buyer1Last ? l.buyer1FirstMiddle+" "+l.buyer1Last : (l.borrower1 || l.borrower?.[0]?.name || "—");
+    const _np=(l.buyer1FirstMiddle||"").trim().split(/\s+/); const b1Name = l.buyer1Last ? (_np[0]||"")+" "+l.buyer1Last : (l.borrower1||l.borrower?.[0]?.name||"—");
     const addr = l.property_address || l.address?.streetAddress || "—";
     const rate = el.interestRate || ep["Interest Rate"] || (l.interestRate ? l.interestRate+"%" : "—");
     const phone = ep["Borrower Phone Number"] || "—";
@@ -515,36 +515,37 @@ function exportExcel() {
     const zip = l.zip || l.address?.zipCode || "";
     const county = l.county || l.address?.county || "";
     
-    // Borrower name parsing - flat API uses borrower1, buyer1FirstMiddle/buyer1Last
-    const b1First = l.buyer1FirstMiddle?.split(" ")[0] || l.address?.borrower?.[0]?.firstName || "";
-    const b1Middle = l.buyer1FirstMiddle?.split(" ").slice(1).join(" ") || l.address?.borrower?.[0]?.middleName || "";
-    const b1Last = l.buyer1Last || l.address?.borrower?.[0]?.lastName || "";
-    
-    // LO info
-    const loName = l.loanOriginator?.name || l.originator_name || "";
-    const loNmls = l.loanOriginator?.nmlsId || l.originator_nmls || l.mm_property_id?.match(/nmls(\d+)/)?.[1] || "";
-    
+    // Borrower name - buyer1FirstMiddle = "firstname middlename", buyer1Last = "lastname"
+    const b1Parts = (l.buyer1FirstMiddle || "").trim().split(/\s+/);
+    const b1First = ep["Borrower First Name"] || b1Parts[0] || "";
+    const b1Middle = ep["Borrower Middle Name"] || b1Parts.slice(1).join(" ") || "";
+    const b1Last = ep["Borrower Last Name"] || l.buyer1Last || "";
+
+    // LO - not in transaction API, pull from search result if available
+    const loName = state.searchResult?.name || "";
+    const loNmls = state.searchResult?.nmls_id || state.nmls || "";
+
     // Employer
     const empName = l.employerName || (l.employers||[])[0]?.name || "";
     const empNmls = l.employerNmlsId || (l.employers||[])[0]?.nmlsId || "";
-    
-    // Loan company
-    const lcName = l.loanCompany?.name || l.lender_name || l.lenderName || "";
+
+    // Loan company = lender for flat API
+    const lcName = l.loanCompany?.name || l.lenderName || "";
     const lcNmls = l.loanCompany?.nmlsId || "";
-    
+
     // Agents
     const buyerAgentName = l.buyerAgentName || l.buyerSideAgent?.name || "";
     const listAgentName = l.listAgentName || l.sellerSideAgent?.name || "";
-    
+
     // Title company - can be object or string
-    const titleCo = typeof l.titleCompany === "object" ? l.titleCompany?.name : l.titleCompany || "";
-    
+    const titleCo = typeof l.titleCompany === "object" ? (l.titleCompany?.name || "") : (l.titleCompany || "");
+
     // Dates
     const txDate = l.tx_date ? new Date(l.tx_date) : null;
     const txDateStr = txDate ? txDate.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
-    
+
     // Rate & amount
-    const rate = el.interestRate || ep["Interest Rate"] || (l.interestRate && l.interestRate !== null ? l.interestRate : "") || "";
+    const rate = ep["Interest Rate"] || el.interestRate || (l.interestRate != null ? String(l.interestRate) : "");
     const mortgageAmt = l.loan_amount || l.mortgage || 0;
 
     return [
