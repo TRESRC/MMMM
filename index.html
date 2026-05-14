@@ -288,17 +288,29 @@ async function tryLogin(u,p){ return await sha256(`${u}:${p}`) === AUTH_HASH; }
 // ── API ──────────────────────────────────────────────────
 async function getMmSessionToken() {
   // Cache token for 10 minutes
-  if(state.mmToken && state.mmToken.expiry > Date.now()) return state.mmToken.value;
+  if(state.mmToken && state.mmToken.expiry > Date.now()) {
+    console.log('Using cached MM token');
+    return state.mmToken.value;
+  }
   try {
+    console.log('Fetching MM token from /api/session...');
     const r = await fetch("/api/session", {
       headers: {"x-app-auth": sessionStorage.getItem(SESSION_KEY)||""}
     });
-    if(!r.ok) return null;
     const d = await r.json();
-    if(!d?.token) return null;
+    console.log('Session response:', r.status, JSON.stringify(d).slice(0,200));
+    if(!r.ok || !d?.token) {
+      // Show banner so user can manually paste token
+      showTokenBanner();
+      return null;
+    }
     state.mmToken = { value: d.token, expiry: Date.now() + 10*60*1000 };
     return d.token;
-  } catch(e) { return null; }
+  } catch(e) { 
+    console.error('getMmSessionToken error:', e.message);
+    showTokenBanner();
+    return null; 
+  }
 }
 
 
