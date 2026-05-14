@@ -430,8 +430,8 @@ function renderLoans() {
 
   const rows = loans.map((l,i) => {
     // Match enriched data by property address (key used in enrichedProps)
-    const addr = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
-    const ep = state.enrichedProps[addr] || {};
+    const addrKey = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
+    const ep = state.enrichedProps[addrKey] || {};
     const el = state.enrichedLoans[l.id] || {};
     const borrower = Array.isArray(l.borrower) ? l.borrower[0] : l.borrower;
     const bName = borrower?.name || [borrower?.firstName, borrower?.lastName].filter(Boolean).join(" ") || "—";
@@ -523,17 +523,17 @@ function exportExcel() {
     const el = state.enrichedLoans[l.id] || {};
     const borrowers = Array.isArray(l.borrower) ? l.borrower : [l.borrower].filter(Boolean);
     const b1 = borrowers[0] || {};
-    const addr = l.address || {};
+    const addrObj = l.address || {};
     const rate = el.interestRate || ep["Interest Rate"] || "";
 
     // Use enriched data if available, fall back to raw loan data
     return [
       ep["Borrower Status"] || l.borrowerStatus || "",
-      ep["Street Address"] || addr.streetAddress || l.property_address || "",
-      ep["City"] || addr.city || "",
-      ep["State"] || addr.state || "",
-      ep["Zip Code"] || addr.zipCode || "",
-      ep["County"] || addr.county || "",
+      ep["Street Address"] || addrObj.streetAddress || l.property_address || "",
+      ep["City"] || addrObj.city || "",
+      ep["State"] || addrObj.state || "",
+      ep["Zip Code"] || addrObj.zipCode || "",
+      ep["County"] || addrObj.county || "",
       ep["Borrower First Name"] || b1.firstName || "",
       ep["Borrower Middle Name"] || b1.middleName || "",
       ep["Borrower Last Name"] || b1.lastName || "",
