@@ -660,29 +660,10 @@ async function runSearch() {
     "setTimeout(()=>window.close(),300);})()"
   ].join('');
 
-  // CMD 2: Enrichment from insights.modelmatch.com (run in second popup)
-  const cmd2 = [
-    "(async()=>{try{",
-    "const rr=await fetch('/refresh',{method:'POST',credentials:'include'});",
-    "const rd=await rr.json();const jwt=rd.accessToken;const uid=rd.user;",
-    "if(!jwt){window.opener.postMessage({type:'MM_ENRICH',error:'Not logged into insights'},'*');window.close();return;}",
-    "let enrichedProps={},enrichedLoans={};",
-    // enriched-property
-    "const ps=await fetch('https://api.next.modelmatch.com/shape/enriched-property',{method:'POST',headers:{Authorization:'Bearer '+jwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_property',where:'user_id = $1',params:[uid]}})});",
-    "const pd=await ps.json();",
-    "if(pd.url){const pr=await fetch(pd.url,{headers:{Authorization:pd.headers.Authorization}});",
-    "const pt=await pr.text();",
-    "for(const line of pt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value&&item.value['Street Address']){enrichedProps[item.value['Street Address'].toLowerCase().trim()]=item.value;}});}catch{}}}",
-    // enriched-loan  
-    "const ls=await fetch('https://api.next.modelmatch.com/shape/enriched-loan',{method:'POST',headers:{Authorization:'Bearer '+jwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_loan',where:'user_id = $1',params:[uid]}})});",
-    "const ld=await ls.json();",
-    "if(ld.url){const lr=await fetch(ld.url,{headers:{Authorization:ld.headers.Authorization}});",
-    "const lt=await lr.text();",
-    "for(const line of lt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value?.loanID)enrichedLoans[item.value.loanID]=item.value;});}catch{}}}",
-    "window.opener.postMessage({type:'MM_ENRICH',enrichedProps,enrichedLoans},'*');",
-    "}catch(e){window.opener.postMessage({type:'MM_ENRICH',error:e.message},'*');}",
-    "setTimeout(()=>window.close(),300);})()"
-  ].join('');
+  // CMD 2 is now handled server-side via Vercel proxy
+  // No second popup needed - enrichment happens after loan data arrives
+  state.pendingEnrichCmd = null; // disable second popup
+
 
   // Store enrichment command for second popup
   state.pendingEnrichCmd = cmd2;
@@ -715,64 +696,51 @@ async function runSearch() {
 }
 
 async function enrichInBackground() {
-  $("enrich-status").textContent="⟳ Loading enriched data…";
-  $("export-btn").disabled=false; // Export works without enrichment
+  $("enrich-status").textContent = "⧙ Fetching contact & rate data…";
+  $("export-btn").disabled = false;
 
   try {
-    const [propData, loanData] = await Promise.all([
-      enrichGet("enriched_property").catch(e => ({ records:[], error:e.message })),
-      enrichGet("enriched_loan").catch(e => ({ records:[], error:e.message })),
+    const appAuth = sessionStorage.getItem(SESSION_KEY+"_hash") || AUTH_HASH;
+    
+    const [propRes, loanRes] = await Promise.all([
+      fetch("/api/enrich?table=enriched_property", {headers:{"x-app-auth": appAuth}}).then(r=>r.json()).catch(e=>({records:[],error:e.message})),
+      fetch("/api/enrich?table=enriched_loan", {headers:{"x-app-auth": appAuth}}).then(r=>r.json()).catch(e=>({records:[],error:e.message})),
     ]);
 
-    // Index enriched property data by property ID or loan ID
-    if(propData.records) {
-      propData.records.forEach(r => {
-        if(r.value) {
-          const v = r.value;
-          // Key by property address for matching
-          const key = v["Street Address"]?.toLowerCase().trim();
-          if(key) state.enrichedProps[key] = v;
-        }
+    // Index enriched properties by street address (lowercase)
+    if(propRes.records && propRes.records.length) {
+      propRes.records.forEach(v => {
+        if(!v || typeof v !== "object") return;
+        const key = (v["Street Address"] || "").toLowerCase().trim();
+        if(key) state.enrichedProps[key] = v;
       });
     }
 
-    // Index enriched loan data by loan ID
-    if(loanData.records) {
-      loanData.records.forEach(r => {
-        if(r.value) {
-          const v = r.value;
-          if(v.loanID) state.enrichedLoans[v.loanID] = v;
-        }
+    // Index enriched loans by loanID
+    if(loanRes.records && loanRes.records.length) {
+      loanRes.records.forEach(v => {
+        if(!v || typeof v !== "object") return;
+        if(v.loanID) state.enrichedLoans[v.loanID] = v;
       });
     }
 
-    // Re-match enriched data to loans by address
-    state.loans.forEach(l => {
-      const addr = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
-      if(addr && state.enrichedProps[addr]) {
-        l._enriched = state.enrichedProps[addr];
-      }
-      if(l.id && state.enrichedLoans[l.id]) {
-        l._enrichedLoan = state.enrichedLoans[l.id];
-      }
-    });
+    const eCount = Object.keys(state.enrichedProps).length;
+    const rCount = Object.keys(state.enrichedLoans).length;
 
-    const enrichedCount = Object.keys(state.enrichedProps).length;
-    const rateCount = Object.keys(state.enrichedLoans).length;
-
-    $("enrich-status").textContent = enrichedCount > 0 || rateCount > 0
-      ? `✓ ${enrichedCount} properties enriched · ${rateCount} rates loaded`
-      : "⚠ No enriched data available yet — run Enhance in insights first";
-
-    renderLoans(); // re-render with enriched data
+    if(eCount > 0 || rCount > 0) {
+      $("enrich-status").textContent = "✓ " + eCount + " properties enriched · " + rCount + " rates loaded";
+      renderLoans();
+    } else {
+      const errMsg = propRes.error || loanRes.error || "";
+      $("enrich-status").textContent = "⚠ No enrichment data" + (errMsg ? ": " + errMsg : " — use insights to enhance loans first");
+    }
 
   } catch(err) {
-    $("enrich-status").textContent = "⚠ Enriched data unavailable";
+    $("enrich-status").textContent = "⚠ Enrichment error: " + err.message;
     console.error("Enrich error:", err);
-  } finally {
-    $("export-btn").disabled=false;
   }
 }
+
 
 // ── TOKEN BANNER ─────────────────────────────────────────────
 function showTokenBanner() {
@@ -963,20 +931,9 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus("✓ " + state.loans.length + " loans loaded — opening enrichment popup…", "ok");
       $("enrich-status").textContent = "⧙ Loading contact & rate data…";
 
-      // Step 2: navigate existing popup to insights (no new window)
-      setTimeout(() => {
-        if(state.pendingEnrichCmd && state.popupWin && !state.popupWin.closed) {
-          try {
-            state.popupWin.location.href = 'https://insights.modelmatch.com/test/loans';
-          } catch(e) {
-            // If blocked, open fresh
-            state.popupWin = window.open('https://insights.modelmatch.com/test/loans', '_blank', 'width=900,height=600,menubar=no,toolbar=no,location=yes,status=no');
-          }
-          setStatus("✓ " + state.loans.length + " loans loaded — paste enrichment command in insights popup", "ok");
-          $("enrich-status").textContent = "⧙ Waiting for enrichment…";
-          showFetchModal(state.pendingEnrichCmd, "Step 2 — Enrich Contact & Rate Data");
-        }
-      }, 800);
+      // Step 2: fetch enrichment server-side via Vercel (no popup needed)
+      $("export-btn").disabled = false;
+      enrichInBackground();
     } else if(e.data.type === 'MM_ENRICH') {
       // Enrichment data back from insights.modelmatch.com popup
       hideFetchModal();
