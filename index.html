@@ -124,6 +124,37 @@
     .enriched-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:4px;vertical-align:middle;}
     .pending-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--amber);margin-right:4px;vertical-align:middle;}
 
+    /* TOKEN BANNER */
+    .token-banner{
+      position:fixed;top:52px;left:0;right:0;z-index:99;
+      background:#3a1a00;border-bottom:1px solid var(--amber);
+      padding:10px 28px;display:flex;align-items:center;gap:12px;
+      font-family:'Chivo Mono',monospace;font-size:11px;color:var(--amber);
+    }
+    .token-banner.hidden{display:none;}
+    .token-banner a{color:var(--amber);font-weight:700;}
+    .token-banner a:hover{text-decoration:underline;}
+    #token-banner-close{margin-left:auto;background:none;border:none;color:var(--amber);cursor:pointer;font-size:14px;}
+
+    /* TOKEN MODAL */
+    .token-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:20px;}
+    .token-modal.hidden{display:none;}
+    .token-modal-box{background:var(--card);border:1px solid var(--border2);border-radius:4px;padding:36px;max-width:580px;width:100%;position:relative;}
+    .token-modal-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:0.06em;color:var(--green);margin-bottom:24px;}
+    .token-modal-steps{display:flex;flex-direction:column;gap:14px;margin-bottom:24px;}
+    .step{display:flex;gap:12px;align-items:flex-start;font-size:13px;color:var(--text);line-height:1.5;}
+    .step-n{background:var(--green);color:#000;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Chivo Mono',monospace;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px;}
+    .token-code{background:var(--bg);border:1px solid var(--border2);border-radius:2px;padding:10px 14px;font-family:'Chivo Mono',monospace;font-size:10px;color:var(--green);word-break:break-all;cursor:pointer;margin-left:34px;}
+    .token-code:hover{border-color:var(--green);}
+    .token-input-row{display:flex;gap:10px;margin-bottom:12px;}
+    .token-input-row input{flex:1;padding:10px 14px;background:var(--bg);border:1px solid var(--border2);border-radius:2px;color:var(--text);font-family:'Chivo Mono',monospace;font-size:12px;outline:none;}
+    .token-input-row input:focus{border-color:var(--green);}
+    .btn-save-token{padding:10px 20px;background:var(--green);color:#000;border:none;border-radius:2px;font-family:'Chivo Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;white-space:nowrap;}
+    .btn-save-token:hover{opacity:0.88;}
+    .token-modal-note{font-family:'Chivo Mono',monospace;font-size:10px;color:var(--muted2);margin-bottom:16px;}
+    .token-modal-close{background:none;border:1px solid var(--border2);color:var(--muted2);padding:8px 16px;border-radius:2px;font-family:'Chivo Mono',monospace;font-size:10px;cursor:pointer;}
+    .token-modal-close:hover{border-color:var(--muted2);color:var(--text);}
+
     @media(max-width:700px){
       .profile{grid-template-columns:1fr;}
       .search-label-wrap{display:none;}
@@ -157,6 +188,31 @@
     <div class="top-right">
       <div class="top-user" id="top-user"></div>
       <button class="btn-sm" id="logout-btn">Sign Out</button>
+    </div>
+  </div>
+
+  <div class="token-banner hidden" id="token-banner">
+    <span>⚠ ModelMatch session expired — </span>
+    <a href="#" id="token-help-link">click here to refresh in 2 minutes</a>
+    <button id="token-banner-close">✕</button>
+  </div>
+
+  <div class="token-modal hidden" id="token-modal">
+    <div class="token-modal-box">
+      <div class="token-modal-title">Refresh ModelMatch Session</div>
+      <div class="token-modal-steps">
+        <div class="step"><span class="step-n">1</span>Open <strong>app.modelmatch.com</strong> in a new tab and make sure you're logged in</div>
+        <div class="step"><span class="step-n">2</span>Press <strong>F12</strong> → Console tab → paste this and hit Enter:</div>
+        <div class="token-code">fetch('https://auth.modelmatch.com/api/auth/get-session',{credentials:'include'}).then(r=>r.json()).then(d=>console.log('TOKEN:',d.session.token))</div>
+        <div class="step"><span class="step-n">3</span>Copy the token value that appears</div>
+        <div class="step"><span class="step-n">4</span>Paste it below and click Save</div>
+      </div>
+      <div class="token-input-row">
+        <input type="text" id="token-input" placeholder="Paste token here…"/>
+        <button class="btn-save-token" id="save-token-btn">Save & Continue</button>
+      </div>
+      <div class="token-modal-note">This takes effect immediately. You'll need to do this once a week.</div>
+      <button class="token-modal-close" id="token-modal-close">Cancel</button>
     </div>
   </div>
 
@@ -231,20 +287,20 @@ async function tryLogin(u,p){ return await sha256(`${u}:${p}`) === AUTH_HASH; }
 
 // ── API ──────────────────────────────────────────────────
 async function getMmSessionToken() {
+  // Cache token for 10 minutes
   if(state.mmToken && state.mmToken.expiry > Date.now()) return state.mmToken.value;
   try {
-    // Call our own Vercel proxy which fetches the token server-side (no CORS)
     const r = await fetch("/api/session", {
       headers: {"x-app-auth": sessionStorage.getItem(SESSION_KEY)||""}
     });
     if(!r.ok) return null;
     const d = await r.json();
-    const t = d?.token;
-    if(!t) return null;
-    state.mmToken = { value: t, expiry: Date.now() + 30*60*1000 };
-    return t;
+    if(!d?.token) return null;
+    state.mmToken = { value: d.token, expiry: Date.now() + 10*60*1000 };
+    return d.token;
   } catch(e) { return null; }
 }
+
 
 async function mmGet(mmPath) {
   const [basePath, qs] = mmPath.split("?");
@@ -591,7 +647,13 @@ async function runSearch() {
     enrichInBackground();
 
   } catch(err) {
-    setStatus("Error: "+err.message, "err");
+    const msg = err.message || "";
+    if(msg.includes("401") || msg.includes("Session expired") || msg.includes("Unauthorized")) {
+      setStatus("Session expired — refresh your ModelMatch token using the banner above", "err");
+      showTokenBanner();
+    } else {
+      setStatus("Error: "+msg, "err");
+    }
     console.error(err);
   } finally {
     $("pull-btn").disabled=false;
@@ -659,6 +721,36 @@ async function enrichInBackground() {
     $("export-btn").disabled=false;
   }
 }
+
+// ── TOKEN BANNER ─────────────────────────────────────────────
+function showTokenBanner() {
+  $("token-banner").classList.remove("hidden");
+  // Push main content down
+  $("app-screen").querySelector(".main").style.marginTop = "88px";
+}
+
+function hideTokenBanner() {
+  $("token-banner").classList.add("hidden");
+  $("app-screen").querySelector(".main").style.marginTop = "52px";
+}
+
+function showTokenModal() {
+  $("token-modal").classList.remove("hidden");
+}
+
+function hideTokenModal() {
+  $("token-modal").classList.add("hidden");
+}
+
+// Copy code snippet on click
+document.addEventListener("click", e => {
+  if(e.target.classList.contains("token-code")) {
+    navigator.clipboard.writeText(e.target.textContent.trim()).then(() => {
+      e.target.style.background = "rgba(0,255,136,0.1)";
+      setTimeout(() => e.target.style.background = "", 1000);
+    });
+  }
+});
 
 // ── INIT ──────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
