@@ -1,4 +1,4 @@
-name: Build & Deploy to GitHub Pages
+name: Deploy to GitHub Pages
 
 on:
   push:
@@ -11,11 +11,11 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -25,13 +25,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inject secrets into app.js
+      - name: Inject AUTH_HASH secret
         env:
           AUTH_HASH: ${{ secrets.AUTH_HASH }}
-          MM_TOKEN: ${{ secrets.MM_TOKEN }}
-        run: |
-          sed -i "s|%%AUTH_HASH%%|${AUTH_HASH}|g" app.js
-          sed -i "s|%%MM_TOKEN%%|${MM_TOKEN}|g" app.js
+        run: sed -i "s|%%AUTH_HASH%%|${AUTH_HASH}|g" index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -41,6 +38,6 @@ jobs:
         with:
           path: '.'
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
