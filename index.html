@@ -975,7 +975,11 @@ document.addEventListener("DOMContentLoaded", () => {
   $("token-help-link").addEventListener("click", e=>{ e.preventDefault(); $("token-modal").classList.remove("hidden"); });
 
   // Connect Insights
-  $("connect-insights-btn").addEventListener("click", ()=>{ $("insights-modal").classList.remove("hidden"); });
+  $("connect-insights-btn").addEventListener("click", ()=>{
+    $("insights-modal").classList.remove("hidden");
+    // Open insights popup so window.opener is set when user pastes command
+    state.insightsPopup = window.open('https://insights.modelmatch.com/test/loans', 'lo_intel_insights', 'width=900,height=600,menubar=no,toolbar=no,location=yes,status=no');
+  });
   $("insights-modal-close").addEventListener("click", ()=>{ $("insights-modal").classList.add("hidden"); });
   $("insights-connect-cmd").addEventListener("click", function() {
     navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
@@ -985,7 +989,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Listen for INSIGHTS_JWT from insights tab
+  // Listen for INSIGHTS_JWT from insights popup via postMessage
   window.addEventListener("message", (e) => {
     if(e.data?.type === "INSIGHTS_JWT" && e.data.jwt) {
       state.insightsToken = { accessToken: e.data.jwt, userId: e.data.user, expiry: Date.now() + 55*60*1000 };
@@ -993,9 +997,33 @@ document.addEventListener("DOMContentLoaded", () => {
       $("insights-label").textContent = "Insights connected";
       $("insights-label").style.color = "var(--green)";
       $("insights-modal").classList.add("hidden");
-      console.log("Insights JWT received, enrichment ready");
+      if(state.insightsPopup && !state.insightsPopup.closed) state.insightsPopup.close();
     }
   });
+
+  // Also check localStorage fallback (if user ran command without opener)
+  function checkInsightsLocalStorage() {
+    try {
+      const stored = localStorage.getItem('lo_intel_jwt');
+      if(stored) {
+        const d = JSON.parse(stored);
+        if(d.jwt && d.exp > Date.now()) {
+          state.insightsToken = { accessToken: d.jwt, userId: d.user, expiry: d.exp };
+          $("insights-dot").style.background = "var(--green)";
+          $("insights-label").textContent = "Insights connected";
+          $("insights-label").style.color = "var(--green)";
+          $("insights-modal").classList.add("hidden");
+          localStorage.removeItem('lo_intel_jwt');
+          return true;
+        }
+      }
+    } catch(e) {}
+    return false;
+  }
+  
+  // Check on load and periodically
+  checkInsightsLocalStorage();
+  setInterval(checkInsightsLocalStorage, 2000);
   $("fetch-modal-close").addEventListener("click", hideFetchModal);
   $("fetch-cmd").addEventListener("click", function() {
     navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
@@ -1045,7 +1073,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="step"><span class="step-n" style="background:var(--amber)">1</span>Open <strong>insights.modelmatch.com</strong> in a tab and make sure you're logged in</div>
         <div class="step"><span class="step-n" style="background:var(--amber)">2</span>Press <strong>F12</strong> &rarr; Console &rarr; click below to copy &rarr; paste &rarr; Enter</div>
       </div>
-      <div class="token-code" id="insights-connect-cmd" style="font-size:10px;cursor:pointer;" title="Click to copy">(async()=>{const r=await fetch('/refresh',{method:'POST',credentials:'include'});const d=await r.json();if(d.accessToken){window.open('').document.write('<script>window.opener.postMessage({type:"INSIGHTS_JWT",jwt:"'+d.accessToken+'",user:"'+d.user+'"},"*");window.close();<\/script>');console.log("Connected!");}else{console.log("Not logged in to insights");}})();</div>
+      <div class="token-code" id="insights-connect-cmd" style="font-size:10px;cursor:pointer;" title="Click to copy">(async()=>{const r=await fetch('/refresh',{method:'POST',credentials:'include'});const d=await r.json();if(d.accessToken&&window.opener){window.opener.postMessage({type:'INSIGHTS_JWT',jwt:d.accessToken,user:d.user},'*');console.log('Connected! You can close this window.');}else if(d.accessToken){localStorage.setItem('lo_intel_jwt',JSON.stringify({jwt:d.accessToken,user:d.user,exp:Date.now()+3300000}));console.log('JWT saved! Switch back to LO Intel tab.');}else{console.log('Not authenticated - log into insights first');}})();</div>
       <div style="font-family:'Chivo Mono',monospace;font-size:10px;color:var(--green);margin-top:8px;text-align:center;">&#x2713; Click the code above to copy it</div>
       <div class="token-modal-note" style="margin-top:16px;">JWT valid for 1 hour. Reconnect if enrichment stops working.</div>
       <button class="token-modal-close" id="insights-modal-close">Cancel</button>
