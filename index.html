@@ -468,13 +468,7 @@
 // CONFIG — injected by GitHub Actions
 // ─────────────────────────────────────────────
 const AUTH_HASH = "%%AUTH_HASH%%";
-const MM_ORG    = "fieldmarketingmovementcom"; // your org slug from the URL
-
-// ─────────────────────────────────────────────
-// CONSTANTS
-// ─────────────────────────────────────────────
-const MM = "https://app.modelmatch.com";
-const SESSION_KEY = "lo_intel_v2";
+const SESSION_KEY = "lo_intel_v3";
 const PAGE_SIZE = 25;
 
 // ─────────────────────────────────────────────
@@ -535,11 +529,16 @@ function saveSession(u) { sessionStorage.setItem(SESSION_KEY, u); }
 function getUser() { return sessionStorage.getItem(SESSION_KEY)||""; }
 
 // ─────────────────────────────────────────────
-// API — uses session cookie (credentials:include)
+// API — routes through Vercel proxy (handles CORS + session)
 // ─────────────────────────────────────────────
-async function mmGet(path) {
-  const res = await fetch(MM + path, { credentials: "include" });
-  if(!res.ok) throw new Error(`${res.status} ${res.statusText} — ${path}`);
+async function mmGet(mmPath) {
+  // Encode the MM path, forward all params through our proxy
+  const [basePath, qs] = mmPath.split("?");
+  const proxyUrl = "/api/mm?path=" + encodeURIComponent(basePath) + (qs ? "&" + qs : "");
+  const res = await fetch(proxyUrl, {
+    headers: { "x-app-auth": sessionStorage.getItem(SESSION_KEY) || "" }
+  });
+  if(!res.ok) throw new Error(`${res.status} ${res.statusText} — ${mmPath}`);
   return res.json();
 }
 
