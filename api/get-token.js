@@ -1,34 +1,44 @@
-// api/get-token.js — diagnostic: probe Lambda from server side (no CORS)
+// api/get-token.js
+// Gets a fresh JWT by hitting insights.modelmatch.com/refresh server-side
+// Uses the MM session cookie — refreshes automatically, no expiry issues
+
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-app-auth");
+  if (req.method === "OPTIONS") return res.status(200).end();
 
-  const sessionToken = process.env.MM_SESSION_TOKEN;
-  const userId = process.env.MM_USER_ID || "usr_01K232E13FWH0D650C46BMX9F6";
-  const lambdaUrl = "https://swlx46gtlc36ngabi7ps2ximhy0idsfu.lambda-url.us-east-1.on.aws/";
-
-  const attempts = [];
-
-  const configs = [
-    { label: "Bearer + body", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${sessionToken}`, "Origin": "https://insights.modelmatch.com" }, body: JSON.stringify({ userID: userId }) },
-    { label: "Cookie + body", headers: { "Content-Type": "application/json", "Cookie": `better-auth.session_token=${sessionToken}`, "Origin": "https://insights.modelmatch.com" }, body: JSON.stringify({ userID: userId }) },
-    { label: "Cookie no body", headers: { "Cookie": `better-auth.session_token=${sessionToken}`, "Origin": "https://insights.modelmatch.com" }, body: undefined },
-    { label: "Bearer no body", headers: { "Authorization": `Bearer ${sessionToken}`, "Origin": "https://insights.modelmatch.com" }, body: undefined },
-    { label: "__Secure cookie", headers: { "Content-Type": "application/json", "Cookie": `__Secure-better-auth.session_token=${sessionToken}`, "Origin": "https://insights.modelmatch.com" }, body: JSON.stringify({ userID: userId }) },
-  ];
-
-  for (const cfg of configs) {
-    try {
-      const r = await fetch(lambdaUrl, {
-        method: "POST",
-        headers: { ...cfg.headers, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-        body: cfg.body,
-      });
-      const text = await r.text();
-      attempts.push({ label: cfg.label, status: r.status, body: text.slice(0, 300) });
-    } catch(e) {
-      attempts.push({ label: cfg.label, error: e.message });
-    }
+  if (req.headers["x-app-auth"] !== process.env.AUTH_HASH) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
-  return res.status(200).json({ attempts });
+  const sessionToken = process.env.MM_SESSION_TOKEN;
+
+  try {
+    const r = await fetch("https://insights.modelmatch.com/refresh", {
+      method: "POST",
+      headers: {
+        "Cookie": `better-auth.session_token=${sessionToken}`,
+        "Origin": "https://insights.modelmatch.com",
+        "Referer": "https://insights.modelmatch.com/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!r.ok) {
+      const text = await r.text();
+      return res.status(r.status).json({ error: `Refresh failed: ${text}` });
+    }
+
+    const data = await r.json();
+    return res.status(200).json({
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      userId: data.user,
+    });
+
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 };
