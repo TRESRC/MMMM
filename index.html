@@ -772,10 +772,13 @@ document.addEventListener("DOMContentLoaded", () => {
     $("auto-token-btn").disabled = true;
     
     // Open a tiny popup on app.modelmatch.com
+    const nmls = $("nmls-input").value.trim().replace(/\D/g,"");
+    // Store NMLS so popup can read it from sessionStorage too
+    sessionStorage.setItem('lo_intel_nmls', nmls);
     const popup = window.open(
-      'https://app.modelmatch.com', 
+      'https://app.modelmatch.com/fieldmarketingmovementcom/market-insights/search?nmls='+nmls, 
       'mm_token_popup',
-      'width=600,height=400,menubar=no,toolbar=no,location=yes,status=no'
+      'width=700,height=500,menubar=no,toolbar=no,location=yes,status=no'
     );
     
     if(!popup) {
@@ -802,16 +805,50 @@ document.addEventListener("DOMContentLoaded", () => {
             const doc = popup.document;
             const s = doc.createElement('script');
             s.textContent = `
-              fetch('https://auth.modelmatch.com/api/auth/get-session', {credentials:'include'})
-                .then(r=>r.json())
-                .then(d=>{
-                  window.opener.postMessage({type:'MM_TOKEN_AUTO', token: d?.session?.token||null}, '*');
+              // Fetch loan data directly from app.modelmatch.com (same origin = no CORS)
+            async function fetchLoData(nmls) {
+              // Step 1: Search by NMLS
+              const searchRes = await fetch('/api/search/lo/search?loNmlsId='+nmls+'&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume', {credentials:'include'});
+              const searchData = await searchRes.json();
+              const hits = searchData?.hits?.hits || [];
+              const src = hits.find(h=>h._source?.nmls_id===String(nmls)) || hits[0];
+              if(!src) return {error:'No LO found for NMLS '+nmls};
+              
+              // Step 2: Get all transactions
+              const id = src._source.id;
+              let loans = [], from = 0, total = null;
+              while(true) {
+                const txRes = await fetch('/api/originators/'+id+'/transactions?dateRange=last_14_months&limit=200&from='+from+'&sort_field=tx_date&sort_order=desc', {
+                  credentials:'include',
+                  headers:{'x-organization-id':'5Zh2dlrSnPPZGRJaC2hI53RPB8aqQSBf'}
+                });
+                const txData = await txRes.json();
+                const txs = txData?.transactions || [];
+                if(total===null) total = txData?.total || txs.length;
+                // Filter out Movement Mortgage
+                const filtered = txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179');
+                loans.push(...filtered);
+                from += 200;
+                if(txs.length < 200 || from >= total) break;
+              }
+              return {originator: src._source, loans, total};
+            }
+            
+            const nmls = new URLSearchParams(window.location.search).get('nmls') || sessionStorage.getItem('lo_intel_nmls');
+            if(nmls) {
+              fetchLoData(nmls)
+                .then(data=>{
+                  window.opener.postMessage({type:'MM_TOKEN_AUTO', token: null, data}, '*');
                   setTimeout(()=>window.close(), 500);
                 })
-                .catch(e=>{ 
+                .catch(e=>{
                   window.opener.postMessage({type:'MM_TOKEN_AUTO', token:null, error:e.message}, '*');
                   setTimeout(()=>window.close(), 500);
                 });
+            } else {
+              window.opener.postMessage({type:'MM_TOKEN_AUTO', token:null, error:'No NMLS provided'}, '*');
+              setTimeout(()=>window.close(), 500);
+            }
             `;
             doc.head.appendChild(s);
           } catch(e2) {
@@ -834,21 +871,36 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 30000);
   });
 
-  // Listen for token from popup
+  // Listen for data from popup
   window.addEventListener('message', (e) => {
     if(e.data?.type !== 'MM_TOKEN_AUTO') return;
-    if(e.data.token) {
+    $("auto-token-btn").textContent = "⚡ Get Token Automatically";
+    $("auto-token-btn").disabled = false;
+
+    if(e.data.data) {
+      // Got full loan data back from popup running on app.modelmatch.com
+      const {originator, loans, total} = e.data.data;
+      state.searchResult = originator;
+      state.originatorId = originator?.id;
+      state.nmls = originator?.nmls_id;
+      state.loans = loans || [];
+      state.totalLoans = total || 0;
+      $("token-modal").classList.add("hidden");
+      $("token-banner").classList.add("hidden");
+      renderProfile(originator);
+      renderLoans();
+      $("results").style.display = "block";
+      setStatus("✓ " + state.loans.length + " qualifying loans found for " + (originator?.name||""), "ok");
+      enrichInBackground();
+    } else if(e.data.error) {
+      setStatus("Error: " + e.data.error, "err");
+    } else if(e.data.token) {
+      // Fallback: just got a token, retry search
       state.mmToken = { value: e.data.token, expiry: Date.now() + 10*60*1000 };
       $("token-modal").classList.add("hidden");
       $("token-banner").classList.add("hidden");
-      setStatus("✓ Token refreshed! Running search…", "ok");
-      // Auto-retry the search
       runSearch();
-    } else {
-      alert("Couldn't get token automatically. Please use the manual method below.");
     }
-    $("auto-token-btn").textContent = "⚡ Get Token Automatically";
-    $("auto-token-btn").disabled = false;
   });
 
   // Token banner & modal
