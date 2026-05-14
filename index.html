@@ -638,12 +638,10 @@ async function runSearch() {
   sessionStorage.setItem('lo_intel_nmls', nmls);
   state.pendingNmls = nmls;
 
-  // Single command that handles both loan data AND enrichment
-  // Enrichment uses a sub-popup on insights.modelmatch.com to get the JWT
+  // Simple loan fetch command - enrichment handled separately via Connect Insights
   const _n = nmls;
   const cmd1 = [
     "(async()=>{try{",
-    // Step A: fetch loan data
     "const n='"+_n+"';",
     "const sr=await fetch('/api/search/lo/search?loNmlsId='+n+'&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume',{credentials:'include'});",
     "const sd=await sr.json();const hits=sd?.hits?.hits||[];",
@@ -657,38 +655,10 @@ async function runSearch() {
     "if(total===null)total=td?.total||txs.length;",
     "loans.push(...txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179'&&!!(t.address?.streetAddress||t.property_address)));",
     "from+=200;if(txs.length<200||from>=total)break;}",
-    // Step B: get enrichment JWT via sub-popup on insights
-    "let enrichedProps={},enrichedLoans={};",
-    "try{",
-    "const jwt=await new Promise((res,rej)=>{",
-    "const w=window.open('https://insights.modelmatch.com/test/loans','_blank','width=1,height=1,left=-100,top=-100');",
-    "const t=setTimeout(()=>rej(new Error('timeout')),15000);",
-    "window.addEventListener('message',function h(e){",
-    "if(e.data&&e.data.type==='INSIGHTS_JWT'){clearTimeout(t);window.removeEventListener('message',h);",
-    "try{w.close();}catch{}res(e.data.jwt);}},false);",
-    "});",
-    "if(jwt){",
-    "const uid='usr_01K232E13FWH0D650C46BMX9F6';",
-    // enriched-property
-    "const ps=await fetch('https://api.next.modelmatch.com/shape/enriched-property',{method:'POST',headers:{Authorization:'Bearer '+jwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_property',where:'user_id = $1',params:[uid]}})});",
-    "const pd=await ps.json();",
-    "if(pd.url){const pr=await fetch(pd.url,{headers:{Authorization:pd.headers.Authorization}});",
-    "const pt=await pr.text();",
-    "for(const line of pt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value&&item.value['Street Address']){enrichedProps[item.value['Street Address'].toLowerCase().trim()]=item.value;}});}catch{}}}",
-    // enriched-loan
-    "const ls=await fetch('https://api.next.modelmatch.com/shape/enriched-loan',{method:'POST',headers:{Authorization:'Bearer '+jwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_loan',where:'user_id = $1',params:[uid]}})});",
-    "const ld=await ls.json();",
-    "if(ld.url){const lr=await fetch(ld.url,{headers:{Authorization:ld.headers.Authorization}});",
-    "const lt=await lr.text();",
-    "for(const line of lt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value?.loanID)enrichedLoans[item.value.loanID]=item.value;});}catch{}}}",
-    "}}catch(ee){console.warn('enrich:',ee.message);}",
-    "window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator,loans,total,enrichedProps,enrichedLoans}},'*');",
+    "window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator,loans,total,enrichedProps:{},enrichedLoans:{}}},'*');",
     "}catch(e){window.opener.postMessage({type:'MM_TOKEN_AUTO',error:e.message},'*');}",
     "setTimeout(()=>window.close(),300);})()"
   ].join('');
-
-  // The insights sub-popup needs to post its JWT back - inject this via the fetchModal instructions
-  // We add a note telling user to also paste the insights command in the tiny window that opens
 
 
 
@@ -730,15 +700,22 @@ async function enrichInBackground() {
   $("enrich-status").textContent = "⧙ Fetching contact & rate data…";
   $("export-btn").disabled = false;
 
+  // Need insights JWT - prompt user to connect if not available
+  if(!state.insightsToken || state.insightsToken.expiry <= Date.now()) {
+    $("enrich-status").textContent = '⚠ Click "Connect Insights" to enable phone/email/rate data';
+    return;
+  }
+
   try {
+    const jwt = state.insightsToken.accessToken;
+    const userId = state.insightsToken.userId || "usr_01K232E13FWH0D650C46BMX9F6";
     const appAuth = sessionStorage.getItem(SESSION_KEY+"_hash") || AUTH_HASH;
-    
+
     const [propRes, loanRes] = await Promise.all([
-      fetch("/api/enrich?table=enriched_property", {headers:{"x-app-auth": appAuth}}).then(r=>r.json()).catch(e=>({records:[],error:e.message})),
-      fetch("/api/enrich?table=enriched_loan", {headers:{"x-app-auth": appAuth}}).then(r=>r.json()).catch(e=>({records:[],error:e.message})),
+      fetch("/api/enrich?table=enriched_property", {headers:{"x-app-auth":appAuth,"x-mm-token":jwt,"x-mm-user":userId}}).then(r=>r.json()).catch(e=>({records:[],error:e.message})),
+      fetch("/api/enrich?table=enriched_loan", {headers:{"x-app-auth":appAuth,"x-mm-token":jwt,"x-mm-user":userId}}).then(r=>r.json()).catch(e=>({records:[],error:e.message})),
     ]);
 
-    // Index enriched properties by street address (lowercase)
     if(propRes.records && propRes.records.length) {
       propRes.records.forEach(v => {
         if(!v || typeof v !== "object") return;
@@ -747,7 +724,6 @@ async function enrichInBackground() {
       });
     }
 
-    // Index enriched loans by loanID
     if(loanRes.records && loanRes.records.length) {
       loanRes.records.forEach(v => {
         if(!v || typeof v !== "object") return;
@@ -806,22 +782,6 @@ document.addEventListener("click", e => {
 // ── FETCH MODAL ──────────────────────────────────────────────
 function showFetchModal(cmd, nmls) {
   $("fetch-cmd").textContent = cmd;
-  // Also show the insights JWT command if not already there
-  const insightsCmd = "(async()=>{const r=await fetch('/refresh',{method:'POST',credentials:'include'});const d=await r.json();window.opener.postMessage({type:'INSIGHTS_JWT',jwt:d.accessToken},'*');})()";
-  let insightsNote = document.getElementById('fetch-insights-note');
-  if(!insightsNote) {
-    insightsNote = document.createElement('div');
-    insightsNote.id = 'fetch-insights-note';
-    insightsNote.innerHTML = '<div style="margin-top:14px;font-family:\'Chivo Mono\',monospace;font-size:10px;color:var(--amber);"><b>A tiny insights window will open automatically.</b> Paste this command there too:</div>' +
-      '<div class="token-code" id="insights-cmd" style="font-size:9px;margin-top:6px;cursor:pointer;" title="Click to copy">' + insightsCmd + '</div>';
-    $("fetch-cmd").parentNode.insertBefore(insightsNote, $("fetch-cmd").nextSibling);
-    document.getElementById('insights-cmd').addEventListener('click', function() {
-      navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
-        this.style.background="rgba(255,170,0,0.15)";
-        setTimeout(()=>this.style.background="",1500);
-      });
-    });
-  }
   $("fetch-modal").classList.remove("hidden");
 }
 function hideFetchModal() {
@@ -1008,6 +968,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Token banner & modal
   $("token-help-link").addEventListener("click", e=>{ e.preventDefault(); $("token-modal").classList.remove("hidden"); });
+
+  // Connect Insights
+  $("connect-insights-btn").addEventListener("click", ()=>{ $("insights-modal").classList.remove("hidden"); });
+  $("insights-modal-close").addEventListener("click", ()=>{ $("insights-modal").classList.add("hidden"); });
+  $("insights-connect-cmd").addEventListener("click", function() {
+    navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
+      this.style.background="rgba(255,170,0,0.15)";
+      this.title="Copied!";
+      setTimeout(()=>{ this.style.background=""; this.title="Click to copy"; },1500);
+    });
+  });
+
+  // Listen for INSIGHTS_JWT from insights tab
+  window.addEventListener("message", (e) => {
+    if(e.data?.type === "INSIGHTS_JWT" && e.data.jwt) {
+      state.insightsToken = { accessToken: e.data.jwt, userId: e.data.user, expiry: Date.now() + 55*60*1000 };
+      $("insights-dot").style.background = "var(--green)";
+      $("insights-label").textContent = "Insights connected";
+      $("insights-label").style.color = "var(--green)";
+      $("insights-modal").classList.add("hidden");
+      console.log("Insights JWT received, enrichment ready");
+    }
+  });
   $("fetch-modal-close").addEventListener("click", hideFetchModal);
   $("fetch-cmd").addEventListener("click", function() {
     navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
@@ -1049,6 +1032,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 </script>
+  <!-- Connect Insights modal -->
+  <div class="fetch-modal hidden" id="insights-modal">
+    <div class="token-modal-box">
+      <div class="token-modal-title" style="color:var(--amber);">Connect Insights</div>
+      <div class="token-modal-steps">
+        <div class="step"><span class="step-n" style="background:var(--amber)">1</span>Open <strong>insights.modelmatch.com</strong> in a tab and make sure you're logged in</div>
+        <div class="step"><span class="step-n" style="background:var(--amber)">2</span>Press <strong>F12</strong> &rarr; Console &rarr; click below to copy &rarr; paste &rarr; Enter</div>
+      </div>
+      <div class="token-code" id="insights-connect-cmd" style="font-size:10px;cursor:pointer;" title="Click to copy">(async()=>{const r=await fetch('/refresh',{method:'POST',credentials:'include'});const d=await r.json();if(d.accessToken){window.open('').document.write('<script>window.opener.postMessage({type:"INSIGHTS_JWT",jwt:"'+d.accessToken+'",user:"'+d.user+'"},"*");window.close();<\/script>');console.log("Connected!");}else{console.log("Not logged in to insights");}})();</div>
+      <div style="font-family:'Chivo Mono',monospace;font-size:10px;color:var(--green);margin-top:8px;text-align:center;">&#x2713; Click the code above to copy it</div>
+      <div class="token-modal-note" style="margin-top:16px;">JWT valid for 1 hour. Reconnect if enrichment stops working.</div>
+      <button class="token-modal-close" id="insights-modal-close">Cancel</button>
+    </div>
+  </div>
+
   <!-- Fetch modal - outside app-screen so it overlays properly -->
   <div class="fetch-modal hidden" id="fetch-modal">
     <div class="token-modal-box">
