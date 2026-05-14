@@ -1,12 +1,3 @@
-# Never commit real secrets
 .env
-.env.local
-*.env
- 
-# Built output (if you ever build locally)
-dist/
-build/
- 
-# OS
 .DS_Store
 Thumbs.db
