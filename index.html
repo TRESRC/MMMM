@@ -295,7 +295,7 @@ async function getMmSessionToken() {
   try {
     console.log('Fetching MM token from /api/session...');
     const r = await fetch("/api/session", {
-      headers: {"x-app-auth": sessionStorage.getItem(SESSION_KEY)||""}
+      headers: {"x-app-auth": sessionStorage.getItem(SESSION_KEY+"_hash")||AUTH_HASH}
     });
     const d = await r.json();
     console.log('Session response:', r.status, JSON.stringify(d).slice(0,200));
@@ -320,7 +320,7 @@ async function mmGet(mmPath) {
   const mmToken = await getMmSessionToken();
   const res = await fetch(proxyUrl, { 
     headers: {
-      "x-app-auth": sessionStorage.getItem(SESSION_KEY)||"",
+      "x-app-auth": sessionStorage.getItem(SESSION_KEY+"_hash")||AUTH_HASH,
       ...(mmToken ? {"x-mm-token": mmToken} : {})
     }
   });
@@ -333,7 +333,7 @@ async function enrichGet(table) {
   if(!token) throw new Error("Could not get insights token — make sure insights.modelmatch.com is open in another tab");
   const res = await fetch(`/api/enrich?table=${table}`, {
     headers: {
-      "x-app-auth": sessionStorage.getItem(SESSION_KEY)||"",
+      "x-app-auth": sessionStorage.getItem(SESSION_KEY+"_hash")||AUTH_HASH,
       "x-mm-token": token.accessToken,
       "x-mm-user": token.userId,
     }
@@ -345,7 +345,7 @@ async function enrichGet(table) {
     if(!newToken) throw new Error("Token refresh failed");
     const retry = await fetch(`/api/enrich?table=${table}`, {
       headers: {
-        "x-app-auth": sessionStorage.getItem(SESSION_KEY)||"",
+        "x-app-auth": sessionStorage.getItem(SESSION_KEY+"_hash")||AUTH_HASH,
         "x-mm-token": newToken.accessToken,
         "x-mm-user": newToken.userId,
       }
@@ -774,7 +774,7 @@ document.addEventListener("DOMContentLoaded", () => {
     $("login-btn").disabled=true;
     const ok = await tryLogin(u,p);
     $("login-btn").disabled=false;
-    if(ok){ sessionStorage.setItem(SESSION_KEY,u); $("top-user").textContent=u; showScreen("app-screen"); }
+    if(ok){ sessionStorage.setItem(SESSION_KEY,u); sessionStorage.setItem(SESSION_KEY+"_hash", AUTH_HASH); $("top-user").textContent=u; showScreen("app-screen"); }
     else { $("login-err").classList.add("show"); $("pw").value=""; $("pw").focus(); setTimeout(()=>$("login-err").classList.remove("show"),3000); }
   }
 
