@@ -638,11 +638,13 @@ async function runSearch() {
   sessionStorage.setItem('lo_intel_nmls', nmls);
   state.pendingNmls = nmls;
 
-  // Two commands - one for each popup
-  // CMD 1: Loan data from app.modelmatch.com
+  // Single command that handles both loan data AND enrichment
+  // Enrichment uses a sub-popup on insights.modelmatch.com to get the JWT
+  const _n = nmls;
   const cmd1 = [
     "(async()=>{try{",
-    "const n='"+nmls+"';",
+    // Step A: fetch loan data
+    "const n='"+_n+"';",
     "const sr=await fetch('/api/search/lo/search?loNmlsId='+n+'&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume',{credentials:'include'});",
     "const sd=await sr.json();const hits=sd?.hits?.hits||[];",
     "const src=hits.find(h=>h._source?.nmls_id===String(n))||hits[0];",
@@ -655,10 +657,40 @@ async function runSearch() {
     "if(total===null)total=td?.total||txs.length;",
     "loans.push(...txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179'&&!!(t.address?.streetAddress||t.property_address)));",
     "from+=200;if(txs.length<200||from>=total)break;}",
-    "window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator,loans,total,enrichedProps:{},enrichedLoans:{}}},'*');",
+    // Step B: get enrichment JWT via sub-popup on insights
+    "let enrichedProps={},enrichedLoans={};",
+    "try{",
+    "const jwt=await new Promise((res,rej)=>{",
+    "const w=window.open('https://insights.modelmatch.com/test/loans','_blank','width=1,height=1,left=-100,top=-100');",
+    "const t=setTimeout(()=>rej(new Error('timeout')),15000);",
+    "window.addEventListener('message',function h(e){",
+    "if(e.data&&e.data.type==='INSIGHTS_JWT'){clearTimeout(t);window.removeEventListener('message',h);",
+    "try{w.close();}catch{}res(e.data.jwt);}},false);",
+    "});",
+    "if(jwt){",
+    "const uid='usr_01K232E13FWH0D650C46BMX9F6';",
+    // enriched-property
+    "const ps=await fetch('https://api.next.modelmatch.com/shape/enriched-property',{method:'POST',headers:{Authorization:'Bearer '+jwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_property',where:'user_id = $1',params:[uid]}})});",
+    "const pd=await ps.json();",
+    "if(pd.url){const pr=await fetch(pd.url,{headers:{Authorization:pd.headers.Authorization}});",
+    "const pt=await pr.text();",
+    "for(const line of pt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value&&item.value['Street Address']){enrichedProps[item.value['Street Address'].toLowerCase().trim()]=item.value;}});}catch{}}}",
+    // enriched-loan
+    "const ls=await fetch('https://api.next.modelmatch.com/shape/enriched-loan',{method:'POST',headers:{Authorization:'Bearer '+jwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_loan',where:'user_id = $1',params:[uid]}})});",
+    "const ld=await ls.json();",
+    "if(ld.url){const lr=await fetch(ld.url,{headers:{Authorization:ld.headers.Authorization}});",
+    "const lt=await lr.text();",
+    "for(const line of lt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value?.loanID)enrichedLoans[item.value.loanID]=item.value;});}catch{}}}",
+    "}}catch(ee){console.warn('enrich:',ee.message);}",
+    "window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator,loans,total,enrichedProps,enrichedLoans}},'*');",
     "}catch(e){window.opener.postMessage({type:'MM_TOKEN_AUTO',error:e.message},'*');}",
     "setTimeout(()=>window.close(),300);})()"
   ].join('');
+
+  // The insights sub-popup needs to post its JWT back - inject this via the fetchModal instructions
+  // We add a note telling user to also paste the insights command in the tiny window that opens
+
+
 
   // CMD 2 is now handled server-side via Vercel proxy
   // No second popup needed - enrichment happens after loan data arrives
@@ -774,6 +806,22 @@ document.addEventListener("click", e => {
 // ── FETCH MODAL ──────────────────────────────────────────────
 function showFetchModal(cmd, nmls) {
   $("fetch-cmd").textContent = cmd;
+  // Also show the insights JWT command if not already there
+  const insightsCmd = "(async()=>{const r=await fetch('/refresh',{method:'POST',credentials:'include'});const d=await r.json();window.opener.postMessage({type:'INSIGHTS_JWT',jwt:d.accessToken},'*');})()";
+  let insightsNote = document.getElementById('fetch-insights-note');
+  if(!insightsNote) {
+    insightsNote = document.createElement('div');
+    insightsNote.id = 'fetch-insights-note';
+    insightsNote.innerHTML = '<div style="margin-top:14px;font-family:\'Chivo Mono\',monospace;font-size:10px;color:var(--amber);"><b>A tiny insights window will open automatically.</b> Paste this command there too:</div>' +
+      '<div class="token-code" id="insights-cmd" style="font-size:9px;margin-top:6px;cursor:pointer;" title="Click to copy">' + insightsCmd + '</div>';
+    $("fetch-cmd").parentNode.insertBefore(insightsNote, $("fetch-cmd").nextSibling);
+    document.getElementById('insights-cmd').addEventListener('click', function() {
+      navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
+        this.style.background="rgba(255,170,0,0.15)";
+        setTimeout(()=>this.style.background="",1500);
+      });
+    });
+  }
   $("fetch-modal").classList.remove("hidden");
 }
 function hideFetchModal() {
