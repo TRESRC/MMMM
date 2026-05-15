@@ -724,8 +724,9 @@ async function enrichInBackground() {
       fetch("/api/enrich?table=enriched_loan", {headers:{"x-app-auth":appAuth,"x-mm-token":jwt,"x-mm-user":userId}}).then(r=>r.json()).catch(e=>({records:[],error:e.message})),
     ]);
 
-    console.log('ENRICH PROP:', JSON.stringify(propRes).slice(0,500));
+    console.log('ENRICH PROP:', JSON.stringify(propRes).slice(0,1000));
     console.log('ENRICH LOAN:', JSON.stringify(loanRes).slice(0,500));
+    console.log('JWT used:', jwt.slice(0,30), 'exp valid:', _insightsToken?.expiry > Date.now());
 
     if(propRes.records && propRes.records.length) {
       propRes.records.forEach(v => {
