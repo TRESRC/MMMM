@@ -1,133 +1,1160 @@
-// api/enrich.js
-// Accepts JWT from browser (obtained via insights.modelmatch.com/refresh)
-// Proxies to api.next.modelmatch.com server-side (no CORS issues)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LO Intel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Chivo+Mono:wght@300;400;700&family=Chivo:wght@300;400;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#060608;--card:#0d0d12;--border:#1a1a26;--border2:#252535;
+      --green:#00ff88;--blue:#2563ff;--red:#ff3355;--amber:#ffaa00;
+      --text:#eeeef5;--muted:#4a4a6a;--muted2:#6a6a8a;
+    }
+    html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Chivo',sans-serif;overflow-x:hidden;}
+    body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+      background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");opacity:0.4;}
+    .orb{position:fixed;border-radius:50%;pointer-events:none;z-index:0;filter:blur(80px);opacity:0.10;}
+    .orb-1{width:600px;height:600px;background:var(--green);top:-200px;right:-100px;}
+    .orb-2{width:400px;height:400px;background:var(--blue);bottom:-100px;left:-100px;}
+    .screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;transition:opacity 0.5s,transform 0.5s;}
+    .screen.hidden{opacity:0;pointer-events:none;transform:translateY(16px);}
 
-module.exports = async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-app-auth, x-mm-token, x-mm-user");
-  if (req.method === "OPTIONS") return res.status(200).end();
+    /* LOGIN */
+    #login-screen{flex-direction:column;}
+    .login-wrap{position:relative;z-index:1;width:100%;max-width:400px;padding:0 20px;}
+    .login-logo{font-family:'Bebas Neue',sans-serif;font-size:56px;letter-spacing:0.06em;line-height:1;margin-bottom:4px;background:linear-gradient(135deg,var(--green),#00aaff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+    .login-tagline{font-family:'Chivo Mono',monospace;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted2);margin-bottom:48px;}
+    .login-card{background:var(--card);border:1px solid var(--border2);border-radius:2px;padding:36px 32px;position:relative;overflow:hidden;}
+    .login-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--green),transparent);}
+    .field{margin-bottom:20px;}
+    .field label{display:block;font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted2);margin-bottom:8px;}
+    .field input{width:100%;padding:12px 14px;background:#080810;border:1px solid var(--border2);border-radius:2px;color:var(--text);font-family:'Chivo Mono',monospace;font-size:14px;outline:none;transition:border-color 0.2s,box-shadow 0.2s;}
+    .field input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(0,255,136,0.08);}
+    .btn-login{width:100%;padding:14px;background:var(--green);color:#000;border:none;border-radius:2px;font-family:'Chivo Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;cursor:pointer;transition:opacity 0.2s,box-shadow 0.2s;}
+    .btn-login:hover{opacity:0.9;box-shadow:0 0 24px rgba(0,255,136,0.3);}
+    .btn-login:disabled{opacity:0.4;cursor:not-allowed;}
+    .login-error{margin-top:14px;text-align:center;font-family:'Chivo Mono',monospace;font-size:11px;color:var(--red);opacity:0;transition:opacity 0.2s;}
+    .login-error.show{opacity:1;}
 
-  if (req.headers["x-app-auth"] !== process.env.AUTH_HASH) {
-    return res.status(401).json({ error: "Unauthorized" });
+    /* APP */
+    #app-screen{flex-direction:column;align-items:stretch;overflow-y:auto;position:absolute;inset:0;}
+    .topbar{position:fixed;top:0;left:0;right:0;height:52px;z-index:100;background:rgba(6,6,8,0.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 28px;}
+    .top-logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:0.1em;background:linear-gradient(135deg,var(--green),#00aaff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+    .top-right{display:flex;align-items:center;gap:16px;}
+    .top-user{font-family:'Chivo Mono',monospace;font-size:10px;color:var(--muted2);letter-spacing:0.1em;}
+    .btn-sm{font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted2);background:none;border:1px solid var(--border2);padding:6px 14px;border-radius:2px;cursor:pointer;transition:color 0.2s,border-color 0.2s;}
+    .btn-sm:hover{color:var(--text);border-color:var(--muted2);}
+    .main{margin-top:52px;padding:48px 28px;max-width:1200px;width:100%;margin-left:auto;margin-right:auto;position:relative;z-index:1;}
+
+    /* HERO */
+    .hero{margin-bottom:40px;}
+    .hero-label{font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.25em;text-transform:uppercase;color:var(--green);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+    .hero-label::before{content:'';width:20px;height:1px;background:var(--green);}
+    .hero-title{font-family:'Bebas Neue',sans-serif;font-size:clamp(48px,6vw,80px);line-height:0.95;letter-spacing:0.04em;margin-bottom:12px;}
+    .hero-title em{color:var(--green);font-style:normal;}
+    .hero-sub{font-size:14px;color:var(--muted2);line-height:1.6;font-weight:300;max-width:600px;}
+
+    /* SEARCH BAR */
+    .search-bar{display:flex;gap:0;margin-bottom:16px;border:1px solid var(--border2);border-radius:2px;overflow:hidden;background:var(--card);transition:border-color 0.2s,box-shadow 0.2s;}
+    .search-bar:focus-within{border-color:var(--green);box-shadow:0 0 0 3px rgba(0,255,136,0.06);}
+    .search-label-wrap{display:flex;align-items:center;gap:10px;padding:0 20px;border-right:1px solid var(--border2);white-space:nowrap;}
+    .search-label-wrap span{font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);}
+    #nmls-input{flex:1;padding:18px 20px;background:transparent;border:none;color:var(--text);font-family:'Chivo Mono',monospace;font-size:22px;letter-spacing:0.12em;outline:none;}
+    #nmls-input::placeholder{color:var(--border2);}
+    .btn-pull{padding:0 32px;background:var(--green);color:#000;border:none;cursor:pointer;font-family:'Chivo Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;display:flex;align-items:center;gap:10px;transition:opacity 0.2s;white-space:nowrap;}
+    .btn-pull:hover{opacity:0.88;}
+    .btn-pull:disabled{opacity:0.35;cursor:not-allowed;}
+    .spinner{width:14px;height:14px;border:2px solid rgba(0,0,0,0.25);border-top-color:#000;border-radius:50%;animation:spin 0.6s linear infinite;display:none;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+
+    /* STATUS */
+    .status{font-family:'Chivo Mono',monospace;font-size:11px;color:var(--muted2);margin-bottom:32px;letter-spacing:0.06em;min-height:16px;}
+    .status.ok{color:var(--green);}
+    .status.err{color:var(--red);}
+    .status.warn{color:var(--amber);}
+
+    /* PROFILE CARD */
+    #results{display:none;animation:fadeUp 0.4s ease;}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+    .profile{background:var(--card);border:1px solid var(--border2);border-radius:2px;padding:28px 32px;margin-bottom:24px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;position:relative;overflow:hidden;}
+    .profile::before{content:'';position:absolute;top:0;left:0;bottom:0;width:3px;background:linear-gradient(180deg,var(--green),var(--blue));}
+    .profile-name{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:0.04em;line-height:1;margin-bottom:4px;}
+    .profile-nmls{font-family:'Chivo Mono',monospace;font-size:11px;color:var(--green);letter-spacing:0.12em;margin-bottom:12px;}
+    .profile-company{font-size:13px;color:var(--muted2);margin-bottom:2px;}
+    .stat-mini{background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:12px 14px;}
+    .stat-mini-k{font-family:'Chivo Mono',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
+    .stat-mini-v{font-family:'Chivo Mono',monospace;font-size:16px;font-weight:700;color:var(--green);}
+    .stat-mini-v.plain{color:var(--text);font-size:13px;}
+    .stats-col{display:flex;flex-direction:column;gap:10px;}
+    .contact-col{display:flex;flex-direction:column;gap:8px;}
+    .contact-row{display:flex;gap:8px;align-items:flex-start;font-size:12px;}
+    .contact-key{font-family:'Chivo Mono',monospace;font-size:8px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);width:56px;flex-shrink:0;padding-top:2px;}
+    .contact-val{color:var(--text);word-break:break-all;}
+
+    /* RESULTS HEADER */
+    .results-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;}
+    .results-hed{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:0.06em;}
+    .results-hed em{color:var(--green);font-style:normal;}
+    .results-actions{display:flex;gap:10px;align-items:center;}
+    .btn-export{font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:var(--green);background:transparent;border:1px solid var(--green);padding:10px 20px;border-radius:2px;cursor:pointer;transition:background 0.2s,color 0.2s,box-shadow 0.2s;display:flex;align-items:center;gap:8px;}
+    .btn-export:hover{background:var(--green);color:#000;box-shadow:0 0 20px rgba(0,255,136,0.25);}
+    .btn-export:disabled{opacity:0.4;cursor:not-allowed;}
+    .enrich-status{font-family:'Chivo Mono',monospace;font-size:10px;color:var(--amber);letter-spacing:0.08em;}
+
+    /* TABLE */
+    .table-wrap{border:1px solid var(--border2);border-radius:2px;overflow-x:auto;max-height:600px;overflow-y:auto;}
+    table{width:100%;border-collapse:collapse;font-size:11px;}
+    thead{background:var(--bg);position:sticky;top:0;z-index:2;}
+    th{font-family:'Chivo Mono',monospace;font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);padding:10px 14px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border2);}
+    td{padding:9px 14px;border-bottom:1px solid rgba(26,26,38,0.6);font-family:'Chivo Mono',monospace;white-space:nowrap;color:var(--text);}
+    tr:last-child td{border-bottom:none;}
+    tr:hover td{background:rgba(0,255,136,0.025);}
+    td.green{color:var(--green);font-weight:700;}
+    td.blue{color:#6699ff;}
+    td.muted{color:var(--muted2);}
+    td.amber{color:var(--amber);}
+    .badge{display:inline-block;padding:2px 7px;border-radius:1px;font-size:7px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;}
+    .badge-purchase{background:rgba(37,99,255,0.15);color:#6699ff;}
+    .badge-refi{background:rgba(0,255,136,0.1);color:var(--green);}
+    .badge-other{background:rgba(255,255,255,0.05);color:var(--muted2);}
+    .enriched-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:4px;vertical-align:middle;}
+    .pending-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--amber);margin-right:4px;vertical-align:middle;}
+
+    /* TOKEN BANNER */
+    .token-banner{
+      position:fixed;top:52px;left:0;right:0;z-index:99;
+      background:#3a1a00;border-bottom:1px solid var(--amber);
+      padding:10px 28px;display:flex;align-items:center;gap:12px;
+      font-family:'Chivo Mono',monospace;font-size:11px;color:var(--amber);
+    }
+    .token-banner.hidden{display:none;}
+    .token-banner a{color:var(--amber);font-weight:700;}
+    .token-banner a:hover{text-decoration:underline;}
+    #token-banner-close{margin-left:auto;background:none;border:none;color:var(--amber);cursor:pointer;font-size:14px;}
+
+    /* TOKEN MODAL */
+    .token-modal,.fetch-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:20px;}
+    .token-modal.hidden{display:none;}
+    .fetch-modal.hidden{display:none;}
+    .token-modal-box{background:var(--card);border:1px solid var(--border2);border-radius:4px;padding:36px;max-width:580px;width:100%;position:relative;}
+    .token-modal-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:0.06em;color:var(--green);margin-bottom:24px;}
+    .token-modal-steps{display:flex;flex-direction:column;gap:14px;margin-bottom:24px;}
+    .step{display:flex;gap:12px;align-items:flex-start;font-size:13px;color:var(--text);line-height:1.5;}
+    .step-n{background:var(--green);color:#000;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Chivo Mono',monospace;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px;}
+    .token-code{background:var(--bg);border:1px solid var(--border2);border-radius:2px;padding:10px 14px;font-family:'Chivo Mono',monospace;font-size:10px;color:var(--green);word-break:break-all;cursor:pointer;margin-left:34px;}
+    .token-code:hover{border-color:var(--green);}
+    .token-input-row{display:flex;gap:10px;margin-bottom:12px;}
+    .token-input-row input{flex:1;padding:10px 14px;background:var(--bg);border:1px solid var(--border2);border-radius:2px;color:var(--text);font-family:'Chivo Mono',monospace;font-size:12px;outline:none;}
+    .token-input-row input:focus{border-color:var(--green);}
+    .btn-save-token{padding:10px 20px;background:var(--green);color:#000;border:none;border-radius:2px;font-family:'Chivo Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;white-space:nowrap;}
+    .btn-save-token:hover{opacity:0.88;}
+    .token-modal-note{font-family:'Chivo Mono',monospace;font-size:10px;color:var(--muted2);margin-bottom:16px;}
+    .token-modal-close{background:none;border:1px solid var(--border2);color:var(--muted2);padding:8px 16px;border-radius:2px;font-family:'Chivo Mono',monospace;font-size:10px;cursor:pointer;}
+    .token-modal-close:hover{border-color:var(--muted2);color:var(--text);}
+
+    @media(max-width:700px){
+      .profile{grid-template-columns:1fr;}
+      .search-label-wrap{display:none;}
+      .main{padding:32px 16px;}
+      .hero-title{font-size:40px;}
+    }
+  </style>
+</head>
+<body>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+
+<!-- LOGIN -->
+<div class="screen" id="login-screen">
+  <div class="login-wrap">
+    <div class="login-logo">LO Intel</div>
+    <div class="login-tagline">ModelMatch · Powered Intelligence</div>
+    <div class="login-card">
+      <div class="field"><label>Username</label><input type="text" id="un" autocomplete="username" placeholder="username"/></div>
+      <div class="field"><label>Password</label><input type="password" id="pw" autocomplete="current-password" placeholder="••••••••"/></div>
+      <button class="btn-login" id="login-btn">Enter Platform</button>
+      <div class="login-error" id="login-err">Invalid credentials</div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="screen hidden" id="app-screen">
+  <div class="topbar">
+    <div class="top-logo">LO Intel</div>
+    <div class="top-right">
+      <div class="top-user" id="top-user"></div>
+        <div id="insights-status" style="display:flex;align-items:center;gap:6px;font-family:'Chivo Mono',monospace;font-size:9px;letter-spacing:0.1em;color:var(--muted);">
+          <span id="insights-dot" style="width:6px;height:6px;border-radius:50%;background:var(--muted);flex-shrink:0;"></span>
+          <span id="insights-label">Insights</span>
+        </div>
+        <button class="btn-sm" id="connect-insights-btn">Connect Insights</button>
+      <button class="btn-sm" id="logout-btn">Sign Out</button>
+    </div>
+  </div>
+
+  <div class="token-banner hidden" id="token-banner">
+    <span>⚠ ModelMatch session expired — </span>
+    <a href="#" id="token-help-link">click here to refresh in 2 minutes</a>
+    <button id="token-banner-close">✕</button>
+  </div>
+
+  <div class="token-modal hidden" id="token-modal">
+    <div class="token-modal-box">
+      <div class="token-modal-title">Refresh ModelMatch Session</div>
+      <div class="token-modal-steps">
+        <div class="step"><span class="step-n">1</span>Make sure you are logged into <strong>app.modelmatch.com</strong> in this browser</div>
+        <div class="step"><span class="step-n">2</span>Click the button below — it opens a small window, grabs your token automatically, and closes</div>
+      </div>
+      <button class="btn-save-token" id="auto-token-btn" style="width:100%;margin-bottom:16px;">&#9889; Get Token Automatically</button>
+      <div style="font-family:'Chivo Mono',monospace;font-size:10px;color:var(--muted2);margin-bottom:12px;text-align:center;">— or paste manually —</div>
+      <div class="token-input-row">
+        <input type="text" id="token-input" placeholder="Paste token here…"/>
+        <button class="btn-save-token" id="save-token-btn">Save</button>
+      </div>
+      <div class="token-modal-note">This takes effect immediately. You'll need to do this once a week.</div>
+      <button class="token-modal-close" id="token-modal-close">Cancel</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="hero">
+      <div class="hero-label">ModelMatch · Insights · Powered</div>
+      <div class="hero-title">Loan Officer<br><em>Intelligence</em></div>
+      <div class="hero-sub">Enter an NMLS ID to pull loan history with full borrower contact info, interest rates, demographics, and equity data. Excludes Movement Mortgage loans. Exports to Excel with all 57 fields.</div>
+    </div>
+
+    <div class="search-bar">
+      <div class="search-label-wrap"><span>NMLS ID</span></div>
+      <input type="text" id="nmls-input" placeholder="e.g. 116199" maxlength="10"/>
+      <button class="btn-pull" id="pull-btn">
+        <span class="spinner" id="spinner"></span>
+        <span id="pull-label">Pull Data</span>
+      </button>
+    </div>
+    <div class="status" id="status">Ready — enter an NMLS ID above</div>
+
+    <div id="results">
+      <div id="profile-area"></div>
+      <div class="results-head">
+        <div class="results-hed">Loan <em>History</em></div>
+        <div class="results-actions">
+          <div class="enrich-status" id="enrich-status"></div>
+          <button class="btn-export" id="export-btn">↓ Download Excel</button>
+        </div>
+      </div>
+      <div id="loans-area"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────
+const AUTH_HASH = "34185e26eda78419381432bc62450210ff3f3be29f495a999feb9bd53e1b5631";
+const SESSION_KEY = "lo_intel_v3";
+const PAGE_SIZE = 200; // pull large batches
+
+// ── STATE ────────────────────────────────────────────────
+// Global insights token - persists across searches
+let _insightsToken = null;
+let state = {
+  nmls: null,
+  originatorId: null,
+  searchResult: null,
+  originatorData: null,
+  loans: [],
+  enrichedProps: {},
+  enrichedLoans: {},
+  totalLoans: 0,
+  insightsToken: null, // cached JWT - NOTE: use global _insightsToken instead
+  mmToken: null,       // cached session token from auth.modelmatch.com
+};
+
+// ── UTILS ────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+async function sha256(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+function fmt(v){ return v != null && v !== "" ? v : "—"; }
+function fmtM(v){ if(!v) return "—"; const n=Number(v); return n>=1e9?"$"+(n/1e9).toFixed(2)+"B":n>=1e6?"$"+(n/1e6).toFixed(2)+"M":n>=1e3?"$"+(n/1e3).toFixed(0)+"K":"$"+n.toFixed(0); }
+function fmtD(v){ if(!v) return "—"; const d=new Date(v); return isNaN(d)?v:d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }
+function badge(type){ if(!type) return `<span class="badge badge-other">—</span>`; const t=type.toLowerCase(); if(t.includes("purchase")) return `<span class="badge badge-purchase">${type}</span>`; if(t.includes("refi")||t.includes("refinance")) return `<span class="badge badge-refi">${type}</span>`; return `<span class="badge badge-other">${type}</span>`; }
+function setStatus(msg, cls=""){ const el=$("status"); el.textContent=msg; el.className="status "+cls; }
+function showScreen(id){ document.querySelectorAll(".screen").forEach(s=>s.classList.add("hidden")); $(id).classList.remove("hidden"); }
+function isLoggedIn(){ return !!sessionStorage.getItem(SESSION_KEY); }
+function getUser(){ return sessionStorage.getItem(SESSION_KEY)||""; }
+
+// ── AUTH ─────────────────────────────────────────────────
+async function tryLogin(u,p){ return await sha256(`${u}:${p}`) === AUTH_HASH; }
+
+// ── API ──────────────────────────────────────────────────
+async function getMmSessionToken() {
+  // Cache token for 10 minutes
+  if(state.mmToken && state.mmToken.expiry > Date.now()) return state.mmToken.value;
+  // No token available — show banner for manual entry
+  showTokenBanner();
+  return null;
+}
+
+
+async function mmGet(mmPath) {
+  const [basePath, qs] = mmPath.split("?");
+  const proxyUrl = "/api/mm?path=" + encodeURIComponent(basePath) + (qs?"&"+qs:"");
+  const mmToken = await getMmSessionToken();
+  const res = await fetch(proxyUrl, { 
+    headers: {
+      "x-app-auth": sessionStorage.getItem(SESSION_KEY+"_hash")||AUTH_HASH,
+      ...(mmToken ? {"x-mm-token": mmToken} : {})
+    }
+  });
+  if(!res.ok) throw new Error(`${res.status} — ${mmPath}`);
+  return res.json();
+}
+
+async function enrichGet(table) {
+  const token = await getInsightsToken();
+  if(!token) return { records: [], error: "Enrichment unavailable (CORS)" };
+  const res = await fetch(`/api/enrich?table=${table}`, {
+    headers: {
+      "x-app-auth": sessionStorage.getItem(SESSION_KEY+"_hash")||AUTH_HASH,
+      "x-mm-token": token.accessToken,
+      "x-mm-user": token.userId,
+    }
+  });
+  // Token expired mid-session — refresh and retry once
+  if(res.status === 401) {
+    _insightsToken = null;
+    const newToken = await getInsightsToken();
+    if(!newToken) throw new Error("Token refresh failed");
+    const retry = await fetch(`/api/enrich?table=${table}`, {
+      headers: {
+        "x-app-auth": sessionStorage.getItem(SESSION_KEY+"_hash")||AUTH_HASH,
+        "x-mm-token": newToken.accessToken,
+        "x-mm-user": newToken.userId,
+      }
+    });
+    if(!retry.ok) throw new Error(`Enrich ${table} failed after retry: ${retry.status}`);
+    return retry.json();
+  }
+  if(!res.ok) throw new Error(`Enrich ${table} failed: ${res.status}`);
+  return res.json();
+}
+
+// Enrichment via insights.modelmatch.com is CORS-blocked from our domain
+// Returns null gracefully - enriched data is optional
+async function getInsightsToken() {
+  if(_insightsToken && _insightsToken.expiry > Date.now()) return _insightsToken;
+  return null; // CORS blocks insights.modelmatch.com/refresh from our domain
+}
+
+// ── SEARCH ───────────────────────────────────────────────
+async function searchByNmls(nmls) {
+  const data = await mmGet(`/api/search/lo/search?loNmlsId=${nmls}&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume`);
+  const hits = data?.hits?.hits || [];
+  const exact = hits.find(h => h._source?.nmls_id === String(nmls)) || hits[0];
+  if(!exact) throw new Error(`No loan officer found for NMLS ${nmls}`);
+  return exact._source;
+}
+
+async function getLoans(internalId) {
+  // Pull all loans in batches of 200, excluding Movement Mortgage (39179)
+  let from = 0;
+  let all = [];
+  let total = null;
+  while(true) {
+    const data = await mmGet(`/api/originators/${internalId}/transactions?dateRange=last_14_months&limit=${PAGE_SIZE}&from=${from}&sort_field=tx_date&sort_order=desc`);
+    const txs = data?.transactions || [];
+    const t = data?.total ?? txs.length;
+    if(total === null) total = t;
+
+    // Filter: exclude Movement Mortgage loans, only include those with address
+    const filtered = txs.filter(tx => {
+      const isMovement = (tx.loanCompany?.nmlsId === "39179" || tx.employerNmlsId === "39179");
+      const hasAddress = !!(tx.property_address || tx.address?.streetAddress || tx.address);
+      return !isMovement && hasAddress;
+    });
+    all.push(...filtered);
+
+    from += PAGE_SIZE;
+    if(txs.length < PAGE_SIZE || from >= total) break;
+    setStatus(`Loading loans… ${all.length} so far`);
+  }
+  return { loans: all, total };
+}
+
+// ── RENDER PROFILE ────────────────────────────────────────
+function renderProfile(src) {
+  const o = src || {};
+  const stats = o.overall_stats || {};
+  $("profile-area").innerHTML = `
+    <div class="profile">
+      <div>
+        <div class="profile-name">${o.name||"Loan Officer"}</div>
+        <div class="profile-nmls">NMLS# ${o.nmls_id||state.nmls}</div>
+        <div class="profile-company">${o.company_name||""}</div>
+        <div class="profile-company" style="color:var(--muted)">${[o.city,o.state].filter(Boolean).join(", ")}</div>
+      </div>
+      <div class="stats-col">
+        <div class="stat-mini"><div class="stat-mini-k">Total Volume</div><div class="stat-mini-v">${fmtM(stats.volume)}</div></div>
+        <div class="stat-mini"><div class="stat-mini-k">Units Closed</div><div class="stat-mini-v">${stats.units||"—"}</div></div>
+        <div class="stat-mini"><div class="stat-mini-k">Avg Loan</div><div class="stat-mini-v">${stats.volume&&stats.units?fmtM(stats.volume/stats.units):"—"}</div></div>
+      </div>
+      <div class="contact-col">
+        ${o.phone?`<div class="contact-row"><span class="contact-key">Phone</span><span class="contact-val">${o.phone}</span></div>`:""}
+        ${o.email?`<div class="contact-row"><span class="contact-key">Email</span><span class="contact-val">${o.email}</span></div>`:""}
+        ${o.company_name?`<div class="contact-row"><span class="contact-key">Company</span><span class="contact-val">${o.company_name}</span></div>`:""}
+        ${o.linkedin_url?`<div class="contact-row"><span class="contact-key">LinkedIn</span><span class="contact-val">${o.linkedin_url}</span></div>`:""}
+      </div>
+    </div>`;
+}
+
+// ── RENDER LOANS ──────────────────────────────────────────
+function renderLoans() {
+  const loans = state.loans;
+  if(!loans.length) {
+    $("loans-area").innerHTML = `<div style="text-align:center;padding:64px;font-family:'Chivo Mono',monospace;font-size:11px;color:var(--muted)">No qualifying loans found (excluding Movement Mortgage loans)</div>`;
+    return;
   }
 
-  const { table } = req.query;
-  if (!table || !["enriched_property", "enriched_loan"].includes(table)) {
-    return res.status(400).json({ error: "table must be enriched_property or enriched_loan" });
+  const rows = loans.map((l,i) => {
+    const addrKey = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
+    const ep = state.enrichedProps[addrKey] || {};
+    const el = state.enrichedLoans[l.id] || {};
+    // Support both flat and nested API structures
+    const _np=(l.buyer1FirstMiddle||"").trim().split(/\s+/); const b1Name = l.buyer1Last ? (_np[0]||"")+" "+l.buyer1Last : (l.borrower1||l.borrower?.[0]?.name||"—");
+    const addr = l.property_address || l.address?.streetAddress || "—";
+    const rate = el.interestRate || ep["Interest Rate"] || (l.interestRate ? l.interestRate+"%" : "—");
+    const phone = ep["Borrower Phone Number"] || "—";
+    const email = ep["Borrower Email Address"] || "—";
+    const isEnriched = Object.keys(ep).length > 0;
+
+    return `<tr data-idx="${i}">
+      <td class="muted">${fmtD(l.tx_date||l.mortgageDate||l.close_date)}</td>
+      <td>${badge(l.mm_loan_transaction_type||l.transactionType||l.transaction_type)}</td>
+      <td>${l.mm_loan_type||l.loanType||"—"}</td>
+      <td class="green">${rate !== "—" ? rate+"%" : "—"}</td>
+      <td class="blue">$${Number(l.loan_amount||l.mortgage||0).toLocaleString()}</td>
+      <td>${isEnriched?"<span class='enriched-dot'></span>":""}<span>${b1Name}</span></td>
+      <td class="${phone!=="—"?"amber":"muted"}">${phone}</td>
+      <td class="${email!=="—"?"amber":"muted"}">${email}</td>
+      <td class="muted">${addr}</td>
+      <td class="muted">${l.lenderName||l.lender?.name||"—"}</td>
+    </tr>`;
+  }).join("");
+
+  $("loans-area").innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Date</th><th>Type</th><th>Loan</th><th>Rate</th><th>Amount</th>
+          <th>Borrower</th><th>Phone</th><th>Email</th><th>Property</th><th>Lender</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── EXCEL EXPORT ──────────────────────────────────────────
+function exportExcel() {
+  const wb = XLSX.utils.book_new();
+  const o = state.searchResult || {};
+
+  // Sheet 1 — LO Profile
+  const profileRows = [
+    ["LO Intel Export — Movement Mortgage Competitor Analysis"],
+    [],
+    ["Name", o.name||""],
+    ["NMLS ID", o.nmls_id||state.nmls],
+    ["Company", o.company_name||""],
+    ["Phone", o.phone||""],
+    ["Email", o.email||""],
+    ["Address", [o.address,o.city,o.state,o.zip_code].filter(Boolean).join(", ")],
+    ["LinkedIn", o.linkedin_url||""],
+    [],
+    ["Total Volume", (o.overall_stats||{}).volume||""],
+    ["Units Closed", (o.overall_stats||{}).units||""],
+    ["Purchase %", (o.overall_stats||{}).purchase_pct||""],
+    ["Refi %", (o.overall_stats||{}).refi_pct||""],
+    ["Total Loans Pulled", state.loans.length],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(profileRows), "LO Profile");
+
+  // Sheet 2 — All 57 fields matching insights.modelmatch.com export format
+  const headers = [
+    "Borrower Status","Street Address","City","State","Zip Code","County",
+    "Borrower First Name","Borrower Middle Name","Borrower Last Name",
+    "Borrower Phone Number Type","Borrower Phone Number","Borrower Phone Number DNC",
+    "Borrower Phone 2 Type","Borrower Phone Number 2","Borrower Phone Number 2 DNC",
+    "Borrower Email Address","Borrower Email Address 2",
+    "Equity","Equity Balance","Equity Percentage","LTV Current","LTV time of loan",
+    "Price Range Min","Price Range Max",
+    "Interest Rate","Mortgage Amount","Sale Price",
+    "Loan Type","Transaction Type",
+    "Loan Originator","Loan Originator NMLS ID",
+    "Employer","Employer NMLS ID",
+    "Loan Company","Loan Company NMLS ID",
+    "Broker","Broker NMLS ID","Lender",
+    "Mortgage Date","Sale Date",
+    "Buyer Agent Name","Buyer Agent First Name","Buyer Agent Last Name",
+    "Buyer Agent Phone Number","Buyer Agent Email Address","Buyer Agent Agency",
+    "Listing Agent Name","Listing Agent Email","Listing Agent Phone",
+    "Listing Agent First Name","Listing Agent Last Name","Listing Agent Agency",
+    "Title Company",
+    "Discretionary Income","Net Worth","Recently Divorced","Income",
+    "Has Children","Child Count","Owner Occupied","TCPA"
+  ];
+
+  const loanRows = state.loans.map(l => {
+    // Support both flat API structure (app.modelmatch.com) and nested structure (insights)
+    const addrKey = (l.address?.streetAddress || l.property_address || "").toLowerCase().trim();
+    const ep = state.enrichedProps[addrKey] || {};
+    const el = state.enrichedLoans[l.id] || {};
+    
+    // Flat API fields (from app.modelmatch.com popup)
+    const streetAddr = l.property_address || l.address?.streetAddress || "";
+    const city = l.city || l.address?.city || "";
+    const state_ = l.state || l.address?.state || "";
+    const zip = l.zip || l.address?.zipCode || "";
+    const county = l.county || l.address?.county || "";
+    
+    // Borrower name - buyer1FirstMiddle = "firstname middlename", buyer1Last = "lastname"
+    const b1Parts = (l.buyer1FirstMiddle || "").trim().split(/\s+/);
+    const b1First = ep["Borrower First Name"] || b1Parts[0] || "";
+    const b1Middle = ep["Borrower Middle Name"] || b1Parts.slice(1).join(" ") || "";
+    const b1Last = ep["Borrower Last Name"] || l.buyer1Last || "";
+
+    // LO - not in transaction API, pull from search result if available
+    const loName = state.searchResult?.name || "";
+    const loNmls = state.searchResult?.nmls_id || state.nmls || "";
+
+    // Employer
+    const empName = l.employerName || (l.employers||[])[0]?.name || "";
+    const empNmls = l.employerNmlsId || (l.employers||[])[0]?.nmlsId || "";
+
+    // Loan company = lender for flat API
+    const lcName = l.loanCompany?.name || l.lenderName || "";
+    const lcNmls = l.loanCompany?.nmlsId || "";
+
+    // Agents
+    const buyerAgentName = l.buyerAgentName || l.buyerSideAgent?.name || "";
+    const listAgentName = l.listAgentName || l.sellerSideAgent?.name || "";
+
+    // Title company - can be object or string
+    const titleCo = typeof l.titleCompany === "object" ? (l.titleCompany?.name || "") : (l.titleCompany || "");
+
+    // Dates
+    const txDate = l.tx_date ? new Date(l.tx_date) : null;
+    const txDateStr = txDate ? txDate.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
+
+    // Rate & amount
+    const rate = ep["Interest Rate"] || el.interestRate || (l.interestRate != null ? String(l.interestRate) : "");
+    const mortgageAmt = l.loan_amount || l.mortgage || 0;
+
+    return [
+      ep["Borrower Status"] || l.borrowerStatus || "",
+      ep["Street Address"] || streetAddr,
+      ep["City"] || city,
+      ep["State"] || state_,
+      ep["Zip Code"] || zip,
+      ep["County"] || county,
+      ep["Borrower First Name"] || b1First,
+      ep["Borrower Middle Name"] || b1Middle,
+      ep["Borrower Last Name"] || b1Last,
+      ep["Borrower Phone Number Type"] || "",
+      ep["Borrower Phone Number"] || "",
+      ep["Borrower Phone Number DNC"] || "No",
+      ep["Borrower Phone 2 Type"] || "",
+      ep["Borrower Phone Number 2"] || "",
+      ep["Borrower Phone Number 2 DNC"] || "No",
+      ep["Borrower Email Address"] || "",
+      ep["Borrower Email Address 2"] || "",
+      ep["Equity"] || "",
+      ep["Equity Balance"] || "",
+      ep["Equity Percentage"] || "",
+      ep["LTV Current"] || "",
+      ep["LTV time of loan"] || l.loanToValue || "",
+      ep["Price Range Min"] || "",
+      ep["Price Range Max"] || "",
+      rate,
+      mortgageAmt ? "$"+Number(mortgageAmt).toLocaleString() : "",
+      ep["Sale Price"] || l.sale_price || l.salePrice || "",
+      ep["Loan Type"] || l.mm_loan_type || l.loanType || "",
+      ep["Transaction Type"] || l.mm_loan_transaction_type || l.transactionType || "",
+      ep["Loan Originator"] || loName,
+      ep["Loan Originator NMLS ID"] || loNmls,
+      ep["Employer"] || empName,
+      ep["Employer NMLS ID"] || empNmls,
+      ep["Loan Company"] || lcName,
+      ep["Loan Company NMLS ID"] || lcNmls,
+      ep["Broker"] || l.broker?.name || "",
+      ep["Broker NMLS ID"] || l.brokerNmlsId || l.broker?.nmlsId || "",
+      ep["Lender"] || l.lenderName || "",
+      ep["Mortgage Date"] || txDateStr,
+      ep["Sale Date"] || txDateStr,
+      ep["Buyer Agent Name"] || buyerAgentName,
+      ep["Buyer Agent First Name"] || (buyerAgentName.split(" ")[0] || ""),
+      ep["Buyer Agent Last Name"] || (buyerAgentName.split(" ").slice(1).join(" ") || ""),
+      ep["Buyer Agent Phone Number"] || "",
+      ep["Buyer Agent Email Address"] || "",
+      ep["Buyer Agent Agency"] || l.buyerSideAgency?.name || "",
+      ep["Listing Agent Name"] || listAgentName,
+      ep["Listing Agent Email"] || "",
+      ep["Listing Agent Phone"] || "",
+      ep["Listing Agent First Name"] || (listAgentName.split(" ")[0] || ""),
+      ep["Listing Agent Last Name"] || (listAgentName.split(" ").slice(1).join(" ") || ""),
+      ep["Listing Agent Agency"] || l.sellerSideAgency?.name || "",
+      ep["Title Company"] || titleCo,
+      ep["Discretionary Income"] || "",
+      ep["Net Worth"] || "",
+      ep["Recently Divorced"] || "No",
+      ep["Income"] || "",
+      ep["Has Children"] || "No",
+      ep["Child Count"] || "",
+      ep["Owner Occupied"] || "",
+      ep["TCPA"] || "No",
+    ];
+  });
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, ...loanRows]), "Loan Data");
+
+  const safeName = (o.name||"LO").replace(/\s+/g,"_");
+  XLSX.writeFile(wb, `LO_${safeName}_NMLS${state.nmls}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+// ── MAIN SEARCH ───────────────────────────────────────────
+async function runSearch() {
+  const nmls = $("nmls-input").value.trim().replace(/\D/g,"");
+  if(!nmls){ setStatus("Enter a valid NMLS ID","err"); return; }
+
+  // Reset state
+  const cachedMm = state.mmToken;
+  state = { nmls, originatorId:null, searchResult:null, originatorData:null, loans:[], enrichedProps:{}, enrichedLoans:{}, totalLoans:0, mmToken: cachedMm };
+  $("results").style.display="none";
+  $("pull-btn").disabled=true;
+  $("spinner").style.display="inline-block";
+  $("pull-label").textContent="Searching…";
+  $("enrich-status").textContent="";
+
+  // Store NMLS for the popup to use
+  sessionStorage.setItem('lo_intel_nmls', nmls);
+  state.pendingNmls = nmls;
+
+  // Simple loan fetch command - enrichment handled separately via Connect Insights
+  const _n = nmls;
+  const cmd1 = [
+    "(async()=>{try{",
+    "const n='"+_n+"';",
+    "const sr=await fetch('/api/search/lo/search?loNmlsId='+n+'&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume',{credentials:'include'});",
+    "const sd=await sr.json();const hits=sd?.hits?.hits||[];",
+    "const src=hits.find(h=>h._source?.nmls_id===String(n))||hits[0];",
+    "if(!src){window.opener.postMessage({type:'MM_TOKEN_AUTO',error:'No LO found for NMLS '+n},'*');window.close();return;}",
+    "const originator=src._source;const id=originator.id;",
+    "let loans=[],from=0,total=null;",
+    "while(true){",
+    "const tr=await fetch('/api/originators/'+id+'/transactions?dateRange=last_14_months&limit=200&from='+from+'&sort_field=tx_date&sort_order=desc',{credentials:'include',headers:{'x-organization-id':'5Zh2dlrSnPPZGRJaC2hI53RPB8aqQSBf'}});",
+    "const td=await tr.json();const txs=td?.transactions||[];",
+    "if(total===null)total=td?.total||txs.length;",
+    "loans.push(...txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179'&&!!(t.address?.streetAddress||t.property_address)));",
+    "from+=200;if(txs.length<200||from>=total)break;}",
+    // Enrich from insights directly in the popup (browser has credentials, no CORS issues)
+    "let enrichedProps={},enrichedLoans={},insightsJwt=null;",
+    "try{",
+    "const ir=await fetch('https://insights.modelmatch.com/refresh',{method:'POST',credentials:'include'});",
+    "const id=await ir.json();insightsJwt=id.accessToken;const uid=id.user;",
+    "if(insightsJwt){",
+    // enriched-property: get proxy URL then fetch data directly
+    "const ps=await fetch('https://api.next.modelmatch.com/shape/enriched-property',{method:'POST',headers:{Authorization:'Bearer '+insightsJwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_property',where:'user_id = $1',params:[uid]}})});",
+    "const pd=await ps.json();",
+    "if(pd.url){",
+    "const pr=await fetch(pd.url,{headers:{Authorization:pd.headers.Authorization}});",
+    "const pt=await pr.text();",
+    "for(const line of pt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value&&item.value['Street Address'])enrichedProps[item.value['Street Address'].toLowerCase().trim()]=item.value;});}catch{}}",
+    "}",
+    // enriched-loan
+    "const ls=await fetch('https://api.next.modelmatch.com/shape/enriched-loan',{method:'POST',headers:{Authorization:'Bearer '+insightsJwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_loan',where:'user_id = $1',params:[uid]}})});",
+    "const ld=await ls.json();",
+    "if(ld.url){",
+    "const lr=await fetch(ld.url,{headers:{Authorization:ld.headers.Authorization}});",
+    "const lt=await lr.text();",
+    "for(const line of lt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value&&item.value.loanID)enrichedLoans[item.value.loanID]=item.value;});}catch{}}",
+    "}",
+    "}}catch(ee){console.warn('enrich err:',ee.message);}",
+    "window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator,loans,total,enrichedProps,enrichedLoans,insightsJwt}},'*');",
+    "}catch(e){window.opener.postMessage({type:'MM_TOKEN_AUTO',error:e.message},'*');}",
+    "setTimeout(()=>window.close(),300);})()"
+  ].join('');
+
+
+
+  // CMD 2 is now handled server-side via Vercel proxy
+  // No second popup needed - enrichment happens after loan data arrives
+  state.pendingEnrichCmd = null; // disable second popup
+
+
+  // Store enrichment command for second popup
+
+  // Open popup on app.modelmatch.com for loan data
+  const popup = window.open(
+    'https://app.modelmatch.com',
+    'mm_data_popup',
+    'width=900,height=600,menubar=no,toolbar=no,location=yes,status=no'
+  );
+
+  if(!popup) {
+    setStatus("Popup blocked — please allow popups for this site then try again.", "err");
+    $("pull-btn").disabled=false;
+    $("spinner").style.display="none";
+    $("pull-label").textContent="Pull Data";
+    return;
   }
 
-  const jwt = req.headers["x-mm-token"];
-  const userId = req.headers["x-mm-user"] || process.env.MM_USER_ID || "usr_01K232E13FWH0D650C46BMX9F6";
+  // Store popup reference so we can reuse it for step 2
+  state.popupWin = popup;
 
-  if (!jwt) {
-    return res.status(400).json({ error: "x-mm-token required" });
+  // Show modal with Step 1 command (loan data from app.modelmatch.com)
+  showFetchModal(cmd1, nmls);
+
+  $("pull-btn").disabled=false;
+  $("spinner").style.display="none";
+  $("pull-label").textContent="Pull Data";
+  setStatus("Step 1 of 2 — paste the command in the ModelMatch popup", "warn");
+}
+
+async function enrichInBackground() {
+  $("enrich-status").textContent = "⧙ Fetching contact & rate data…";
+  $("export-btn").disabled = false;
+
+  // Need insights JWT - prompt user to connect if not available
+  if(!_insightsToken || _insightsToken.expiry <= Date.now()) {
+    $("enrich-status").textContent = '⚠ Click "Connect Insights" to enable phone/email/rate data';
+    return;
   }
-
-  const shapeKey = table === "enriched_property" ? "enriched-property" : "enriched-loan";
-  const shape = { table, where: "user_id = $1", params: [userId] };
 
   try {
-    // Step 1: Get proxy URL from api.next.modelmatch.com
-    const shapeRes = await fetch(`https://api.next.modelmatch.com/shape/${shapeKey}`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${jwt}`,
-        "Content-Type": "application/json",
-        "Origin": "https://insights.modelmatch.com",
-        "Referer": "https://insights.modelmatch.com/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-      body: JSON.stringify({ shape }),
-    });
+    const jwt = _insightsToken.accessToken;
+    const userId = _insightsToken.userId || "usr_01K232E13FWH0D650C46BMX9F6";
+    const appAuth = sessionStorage.getItem(SESSION_KEY+"_hash") || AUTH_HASH;
 
-    if (!shapeRes.ok) {
-      const err = await shapeRes.text();
-      return res.status(shapeRes.status).json({ error: `Shape API ${shapeRes.status}: ${err.slice(0,200)}` });
-    }
+    const [propRes, loanRes] = await Promise.all([
+      fetch("/api/enrich?table=enriched_property", {headers:{"x-app-auth":appAuth,"x-mm-token":jwt,"x-mm-user":userId}}).then(r=>r.json()).catch(e=>({records:[],error:e.message})),
+      fetch("/api/enrich?table=enriched_loan", {headers:{"x-app-auth":appAuth,"x-mm-token":jwt,"x-mm-user":userId}}).then(r=>r.json()).catch(e=>({records:[],error:e.message})),
+    ]);
 
-    const shapeData = await shapeRes.json();
+    console.log('ENRICH PROP:', JSON.stringify(propRes).slice(0,1000));
+    console.log('ENRICH LOAN:', JSON.stringify(loanRes).slice(0,500));
+    console.log('JWT used:', jwt.slice(0,30), 'exp valid:', _insightsToken?.expiry > Date.now());
 
-    if (!shapeData.url || !shapeData.headers?.Authorization) {
-      return res.status(500).json({ error: "No proxy URL returned", shapeData });
-    }
-
-    // Step 2: Fetch from Cloudflare worker - may need multiple requests for full data
-    // First request gets the shape handle and initial data
-    const dataRes = await fetch(shapeData.url, {
-      headers: { "Authorization": shapeData.headers.Authorization },
-    });
-
-    const text = await dataRes.text();
-    const lines = text.split("\n").filter(l => l.trim());
-    
-    // Parse all records from NDJSON stream
-    const records = [];
-    let shapeHandle = null;
-    let lastOffset = null;
-
-    for (const line of lines) {
-      try {
-        const parsed = JSON.parse(line);
-        if (Array.isArray(parsed)) {
-          for (const item of parsed) {
-            // Header messages have control fields
-            if (item.headers) {
-              shapeHandle = item.headers["electric-shape-handle"] || shapeHandle;
-              lastOffset = item.headers["electric-offset"] || lastOffset;
-              continue;
-            }
-            // Data records have value field
-            if (item.value !== undefined && item.value !== null) {
-              records.push(item.value);
-            }
-          }
-        } else if (parsed && typeof parsed === "object") {
-          // Single object response
-          if (parsed.headers) {
-            shapeHandle = parsed.headers["electric-shape-handle"] || shapeHandle;
-          } else if (parsed.value !== undefined) {
-            records.push(parsed.value);
-          }
-        }
-      } catch {}
-    }
-
-    // If we got a shape handle, fetch more data if available
-    if (shapeHandle && records.length === 0 && lastOffset) {
-      // Try fetching with the offset to get actual data
-      const url2 = new URL(shapeData.url);
-      url2.searchParams.set("handle", shapeHandle);
-      url2.searchParams.set("offset", "-1"); // Start from beginning
-      
-      const dataRes2 = await fetch(url2.toString(), {
-        headers: { "Authorization": shapeData.headers.Authorization },
+    if(propRes.records && propRes.records.length) {
+      propRes.records.forEach(v => {
+        if(!v || typeof v !== "object") return;
+        const key = (v["Street Address"] || "").toLowerCase().trim();
+        if(key) state.enrichedProps[key] = v;
       });
-      const text2 = await dataRes2.text();
-      
-      for (const line of text2.split("\n").filter(l => l.trim())) {
-        try {
-          const parsed = JSON.parse(line);
-          if (Array.isArray(parsed)) {
-            for (const item of parsed) {
-              if (item.value !== undefined && item.value !== null) records.push(item.value);
-            }
-          }
-        } catch {}
-      }
     }
 
-    return res.status(200).json({ 
-      records, 
-      count: records.length,
-      debug: { 
-        rawLines: lines.length,
-        shapeHandle,
-        rawSample: text.slice(0, 300)
-      }
-    });
+    if(loanRes.records && loanRes.records.length) {
+      loanRes.records.forEach(v => {
+        if(!v || typeof v !== "object") return;
+        if(v.loanID) state.enrichedLoans[v.loanID] = v;
+      });
+    }
 
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
+    const eCount = Object.keys(state.enrichedProps).length;
+    const rCount = Object.keys(state.enrichedLoans).length;
+
+    if(eCount > 0 || rCount > 0) {
+      $("enrich-status").textContent = "✓ " + eCount + " properties enriched · " + rCount + " rates loaded";
+      renderLoans();
+    } else {
+      const errMsg = propRes.error || loanRes.error || "";
+      $("enrich-status").textContent = "⚠ No enrichment data" + (errMsg ? ": " + errMsg : " — use insights to enhance loans first");
+    }
+
+  } catch(err) {
+    $("enrich-status").textContent = "⚠ Enrichment error: " + err.message;
+    console.error("Enrich error:", err);
   }
-};
+}
+
+
+// ── TOKEN BANNER ─────────────────────────────────────────────
+function showTokenBanner() {
+  $("token-banner").classList.remove("hidden");
+  // Push main content down
+  $("app-screen").querySelector(".main").style.marginTop = "88px";
+}
+
+function hideTokenBanner() {
+  $("token-banner").classList.add("hidden");
+  $("app-screen").querySelector(".main").style.marginTop = "52px";
+}
+
+function showTokenModal() {
+  $("token-modal").classList.remove("hidden");
+}
+
+function hideTokenModal() {
+  $("token-modal").classList.add("hidden");
+}
+
+// Copy code snippet on click
+document.addEventListener("click", e => {
+  if(e.target.classList.contains("token-code")) {
+    navigator.clipboard.writeText(e.target.textContent.trim()).then(() => {
+      e.target.style.background = "rgba(0,255,136,0.1)";
+      setTimeout(() => e.target.style.background = "", 1000);
+    });
+  }
+});
+
+// ── FETCH MODAL ──────────────────────────────────────────────
+function showFetchModal(cmd, nmls) {
+  $("fetch-cmd").textContent = cmd;
+  $("fetch-modal").classList.remove("hidden");
+}
+function hideFetchModal() {
+  $("fetch-modal").classList.add("hidden");
+}
+
+// ── INIT ──────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+  if(isLoggedIn()){ showScreen("app-screen"); $("top-user").textContent=getUser(); }
+
+  async function attemptLogin() {
+    const u=$("un").value.trim(), p=$("pw").value;
+    if(!u||!p) return;
+    $("login-btn").disabled=true;
+    const ok = await tryLogin(u,p);
+    $("login-btn").disabled=false;
+    if(ok){ sessionStorage.setItem(SESSION_KEY,u); sessionStorage.setItem(SESSION_KEY+"_hash", AUTH_HASH); $("top-user").textContent=u; showScreen("app-screen"); }
+    else { $("login-err").classList.add("show"); $("pw").value=""; $("pw").focus(); setTimeout(()=>$("login-err").classList.remove("show"),3000); }
+  }
+
+  $("login-btn").addEventListener("click", attemptLogin);
+  $("pw").addEventListener("keydown", e=>{ if(e.key==="Enter") attemptLogin(); });
+  $("un").addEventListener("keydown", e=>{ if(e.key==="Enter") $("pw").focus(); });
+  $("logout-btn").addEventListener("click", ()=>{ sessionStorage.removeItem(SESSION_KEY); showScreen("login-screen"); $("nmls-input").value=""; $("results").style.display="none"; });
+  $("pull-btn").addEventListener("click", runSearch);
+  $("nmls-input").addEventListener("keydown", e=>{ if(e.key==="Enter") runSearch(); });
+  $("export-btn").addEventListener("click", exportExcel);
+
+  // Auto-get token via popup window
+  $("auto-token-btn").addEventListener("click", ()=>{
+    $("auto-token-btn").textContent = "Opening… (allow popups if blocked)";
+    $("auto-token-btn").disabled = true;
+    
+    // Open a tiny popup on app.modelmatch.com
+    const nmls = $("nmls-input").value.trim().replace(/\D/g,"");
+    // Store NMLS so popup can read it from sessionStorage too
+    sessionStorage.setItem('lo_intel_nmls', nmls);
+    const popup = window.open(
+      'https://app.modelmatch.com/fieldmarketingmovementcom/market-insights/search?nmls='+nmls, 
+      'mm_token_popup',
+      'width=700,height=500,menubar=no,toolbar=no,location=yes,status=no'
+    );
+    
+    if(!popup) {
+      alert("Popup was blocked! Please allow popups for this site and try again.");
+      $("auto-token-btn").textContent = "⚡ Get Token Automatically";
+      $("auto-token-btn").disabled = false;
+      return;
+    }
+
+    // Poll until the popup has loaded and we can run our script
+    const interval = setInterval(() => {
+      try {
+        if(popup.closed) {
+          clearInterval(interval);
+          $("auto-token-btn").textContent = "⚡ Get Token Automatically";
+          $("auto-token-btn").disabled = false;
+          return;
+        }
+        // Try to access the popup's location - will throw if cross-origin
+        const href = popup.location.href;
+        if(href && href.includes('app.modelmatch.com') && !href.includes('auth.modelmatch.com')) {
+          // Popup is on right domain - inject script via createElement (bypasses some CSP)
+          try {
+            const doc = popup.document;
+            const s = doc.createElement('script');
+            s.textContent = `
+              // Fetch loan data directly from app.modelmatch.com (same origin = no CORS)
+            async function fetchLoData(nmls) {
+              // Step 1: Search by NMLS
+              const searchRes = await fetch('/api/search/lo/search?loNmlsId='+nmls+'&dateRange=last_14_months&type=lo&page=1&limit=10&sortBy=volume', {credentials:'include'});
+              const searchData = await searchRes.json();
+              const hits = searchData?.hits?.hits || [];
+              const src = hits.find(h=>h._source?.nmls_id===String(nmls)) || hits[0];
+              if(!src) return {error:'No LO found for NMLS '+nmls};
+              
+              // Step 2: Get all transactions
+              const id = src._source.id;
+              let loans = [], from = 0, total = null;
+              while(true) {
+                const txRes = await fetch('/api/originators/'+id+'/transactions?dateRange=last_14_months&limit=200&from='+from+'&sort_field=tx_date&sort_order=desc', {
+                  credentials:'include',
+                  headers:{'x-organization-id':'5Zh2dlrSnPPZGRJaC2hI53RPB8aqQSBf'}
+                });
+                const txData = await txRes.json();
+                const txs = txData?.transactions || [];
+                if(total===null) total = txData?.total || txs.length;
+                // Filter out Movement Mortgage
+                const filtered = txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179');
+                loans.push(...filtered);
+                from += 200;
+                if(txs.length < 200 || from >= total) break;
+              }
+              return {originator: src._source, loans, total};
+            }
+            
+            const nmls = new URLSearchParams(window.location.search).get('nmls') || sessionStorage.getItem('lo_intel_nmls');
+            if(nmls) {
+              fetchLoData(nmls)
+                .then(data=>{
+                  window.opener.postMessage({type:'MM_TOKEN_AUTO', token: null, data}, '*');
+                  setTimeout(()=>window.close(), 500);
+                })
+                .catch(e=>{
+                  window.opener.postMessage({type:'MM_TOKEN_AUTO', token:null, error:e.message}, '*');
+                  setTimeout(()=>window.close(), 500);
+                });
+            } else {
+              window.opener.postMessage({type:'MM_TOKEN_AUTO', token:null, error:'No NMLS provided'}, '*');
+              setTimeout(()=>window.close(), 500);
+            }
+            `;
+            doc.head.appendChild(s);
+          } catch(e2) {
+            // Script injection blocked - navigate popup to our token fetcher
+            popup.location.href = 'https://app.modelmatch.com/?_lo_intel_fetch=1';
+          }
+          clearInterval(interval);
+        }
+      } catch(e) {
+        // Still loading or cross-origin redirect - keep waiting
+      }
+    }, 500);
+
+    // Timeout after 30s
+    setTimeout(() => {
+      clearInterval(interval);
+      if(!popup.closed) popup.close();
+      $("auto-token-btn").textContent = "⚡ Get Token Automatically";
+      $("auto-token-btn").disabled = false;
+    }, 30000);
+  });
+
+  // Listen for data from popup
+  window.addEventListener('message', (e) => {
+    if(e.data?.type !== 'MM_TOKEN_AUTO') return;
+    $("auto-token-btn").textContent = "⚡ Get Token Automatically";
+    $("auto-token-btn").disabled = false;
+
+    if(e.data.data) {
+      hideFetchModal();
+      const {originator, loans, total, insightsJwt} = e.data.data;
+      state.searchResult = originator;
+      state.originatorId = originator?.id;
+      state.nmls = originator?.nmls_id;
+      state.loans = loans || [];
+      state.totalLoans = total || 0;
+      $("token-modal").classList.add("hidden");
+      $("token-banner").classList.add("hidden");
+      renderProfile(originator);
+      renderLoans();
+      $("results").style.display = "block";
+      $("export-btn").disabled = false;
+
+      // Use enriched data that came directly from the popup browser session (no Vercel proxy needed)
+      const {enrichedProps, enrichedLoans} = e.data.data;
+      if(enrichedProps && Object.keys(enrichedProps).length) state.enrichedProps = enrichedProps;
+      if(enrichedLoans && Object.keys(enrichedLoans).length) state.enrichedLoans = enrichedLoans;
+
+      const eCount = Object.keys(state.enrichedProps).length;
+      const rCount = Object.keys(state.enrichedLoans).length;
+
+      if(eCount > 0 || rCount > 0) {
+        $("enrich-status").textContent = "✓ " + eCount + " properties enriched · " + rCount + " rates loaded";
+        $("insights-dot").style.background = "var(--green)";
+        $("insights-label").textContent = "Insights connected";
+        $("insights-label").style.color = "var(--green)";
+        setStatus("✓ " + state.loans.length + " loans · " + eCount + " enriched · " + rCount + " rates", "ok");
+        renderLoans();
+      } else {
+        $("enrich-status").textContent = "⚠ No enrichment data — use insights to enhance loans first";
+        setStatus("✓ " + state.loans.length + " loans loaded (no enrichment)", "ok");
+      }
+    } else if(e.data.type === 'MM_ENRICH') {
+      // Enrichment data back from insights.modelmatch.com popup
+      hideFetchModal();
+      if(e.data.enrichedProps) {
+        state.enrichedProps = e.data.enrichedProps;
+        state.enrichedLoans = e.data.enrichedLoans || {};
+        renderLoans(); // re-render with enriched data
+        const eCount = Object.keys(state.enrichedProps).length;
+        const rCount = Object.keys(state.enrichedLoans).length;
+        $("enrich-status").textContent = "\u2713 " + eCount + " properties enriched \u00b7 " + rCount + " rates";
+        setStatus("\u2713 " + state.loans.length + " loans \u00b7 " + eCount + " enriched \u00b7 " + rCount + " rates loaded", "ok");
+      } else if(e.data.error) {
+        $("enrich-status").textContent = "\u26a0 Enrichment error: " + e.data.error;
+      }
+    } else if(e.data.error) {
+      setStatus("Error: " + e.data.error, "err");
+    } else if(e.data.token) {
+      // Fallback: just got a token, retry search
+      state.mmToken = { value: e.data.token, expiry: Date.now() + 10*60*1000 };
+      $("token-modal").classList.add("hidden");
+      $("token-banner").classList.add("hidden");
+      runSearch();
+    }
+  });
+
+  // Token banner & modal
+  $("token-help-link").addEventListener("click", e=>{ e.preventDefault(); $("token-modal").classList.remove("hidden"); });
+
+  // Connect Insights
+  $("connect-insights-btn").addEventListener("click", ()=>{
+    $("insights-modal").classList.remove("hidden");
+    // Open insights popup - script injection attempted automatically
+    state.insightsPopup = window.open('https://insights.modelmatch.com/test/loans', 'lo_intel_insights', 'width=900,height=600,menubar=no,toolbar=no,location=yes,status=no');
+    
+    // Try to auto-inject as soon as page loads (before React crash)
+    const autoInterval = setInterval(() => {
+      try {
+        if(!state.insightsPopup || state.insightsPopup.closed) { clearInterval(autoInterval); return; }
+        const href = state.insightsPopup.location.href;
+        if(href && href.includes('insights.modelmatch.com')) {
+          clearInterval(autoInterval);
+          // Inject immediately - works even if React crashes after
+          const s = state.insightsPopup.document.createElement('script');
+          s.textContent = "(async()=>{try{const r=await fetch('/refresh',{method:'POST',credentials:'include'});const d=await r.json();if(d.accessToken){window.opener.postMessage({type:'INSIGHTS_JWT',jwt:d.accessToken,user:d.user},'*');console.log('LO Intel: Connected!');setTimeout(()=>window.close(),500);}else{console.log('LO Intel: Not logged in');}}catch(e){console.log('LO Intel err:',e.message);}})();";
+          state.insightsPopup.document.head.appendChild(s);
+        }
+      } catch(e) { /* still loading */ }
+    }, 300);
+    
+    // Timeout after 20s
+    setTimeout(() => clearInterval(autoInterval), 20000);
+  });
+  $("insights-modal-close").addEventListener("click", ()=>{ $("insights-modal").classList.add("hidden"); });
+  $("insights-connect-cmd").addEventListener("click", function() {
+    navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
+      this.style.background="rgba(255,170,0,0.15)";
+      this.title="Copied!";
+      setTimeout(()=>{ this.style.background=""; this.title="Click to copy"; },1500);
+    });
+  });
+
+  // Listen for INSIGHTS_JWT from insights popup via postMessage
+  window.addEventListener("message", (e) => {
+    if(e.data?.type === "INSIGHTS_JWT" && e.data.jwt) {
+      _insightsToken = { accessToken: e.data.jwt, userId: e.data.user, expiry: Date.now() + 55*60*1000 };
+      $("insights-dot").style.background = "var(--green)";
+      $("insights-label").textContent = "Insights connected";
+      $("insights-label").style.color = "var(--green)";
+      $("insights-modal").classList.add("hidden");
+      if(state.insightsPopup && !state.insightsPopup.closed) state.insightsPopup.close();
+    }
+  });
+
+  // Also check localStorage fallback (if user ran command without opener)
+  function checkInsightsLocalStorage() {
+    try {
+      const stored = localStorage.getItem('lo_intel_jwt');
+      if(stored) {
+        const d = JSON.parse(stored);
+        if(d.jwt && d.exp > Date.now()) {
+          _insightsToken = { accessToken: d.jwt, userId: d.user, expiry: d.exp };
+          $("insights-dot").style.background = "var(--green)";
+          $("insights-label").textContent = "Insights connected";
+          $("insights-label").style.color = "var(--green)";
+          $("insights-modal").classList.add("hidden");
+          localStorage.removeItem('lo_intel_jwt');
+          return true;
+        }
+      }
+    } catch(e) {}
+    return false;
+  }
+  
+  // Check on load and periodically
+  checkInsightsLocalStorage();
+  setInterval(checkInsightsLocalStorage, 2000);
+  $("fetch-modal-close").addEventListener("click", hideFetchModal);
+  $("fetch-cmd").addEventListener("click", function() {
+    navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
+      this.style.background="rgba(0,255,136,0.15)";
+      this.title = "Copied!";
+      setTimeout(()=>{ this.style.background=""; this.title="Click to copy"; },1500);
+    });
+  });
+  $("token-banner-close").addEventListener("click", ()=>{ $("token-banner").classList.add("hidden"); });
+  $("token-modal-close").addEventListener("click", ()=>{ $("token-modal").classList.add("hidden"); });
+
+  document.querySelector(".token-code").addEventListener("click", function() {
+    navigator.clipboard.writeText(this.textContent.trim()).then(()=>{
+      this.style.background="rgba(0,255,136,0.15)";
+      setTimeout(()=>this.style.background="",1000);
+    });
+  });
+
+  $("save-token-btn").addEventListener("click", async ()=>{
+    const newToken = $("token-input").value.trim();
+    if(!newToken || newToken.length < 20){ alert("Please paste a valid token"); return; }
+    $("save-token-btn").textContent="Testing…";
+    $("save-token-btn").disabled=true;
+    try {
+      const testRes = await fetch("/api/mm?path=%2Fapi%2Fsearch%2Flo%2Fsearch&loNmlsId=116199&dateRange=last_14_months&type=lo&page=1&limit=1&sortBy=volume", {
+        headers:{"x-app-auth":sessionStorage.getItem(SESSION_KEY)||"","x-mm-token":newToken}
+      });
+      if(testRes.ok){
+        state.mmToken={value:newToken,expiry:Date.now()+10*60*1000};
+        $("token-modal").classList.add("hidden");
+        $("token-banner").classList.add("hidden");
+        setStatus("✓ Session refreshed! Also update MM_SESSION_TOKEN in Vercel to make it permanent.","ok");
+      } else {
+        alert("Token didn't work ("+testRes.status+"). Make sure you copied the full token.");
+      }
+    } catch(e){ alert("Error: "+e.message); }
+    $("save-token-btn").textContent="Save & Continue";
+    $("save-token-btn").disabled=false;
+  });
+});
+</script>
+  <!-- Connect Insights modal -->
+  <div class="fetch-modal hidden" id="insights-modal">
+    <div class="token-modal-box">
+      <div class="token-modal-title" style="color:var(--amber);">Connect Insights</div>
+      <div class="token-modal-steps">
+        <div class="step"><span class="step-n" style="background:var(--amber)">1</span>Make sure you're logged into <strong>insights.modelmatch.com</strong></div>
+        <div class="step"><span class="step-n" style="background:var(--amber)">2</span>A popup just opened &mdash; it will connect <strong>automatically</strong> in a few seconds &mdash; this window will close on its own</div>
+        <div class="step"><span class="step-n" style="background:var(--amber)">3</span>If it doesn't auto-connect, paste this in the <strong>popup's</strong> console (F12 in the popup):</div>
+      </div>
+      <div class="token-code" id="insights-connect-cmd" style="font-size:10px;cursor:pointer;" title="Click to copy">(async()=>{const r=await fetch('/refresh',{method:'POST',credentials:'include'});const d=await r.json();if(d.accessToken&&window.opener){window.opener.postMessage({type:'INSIGHTS_JWT',jwt:d.accessToken,user:d.user},'*');console.log('LO Intel: Connected!');setTimeout(()=>window.close(),500);}else{console.log('LO Intel: Not logged in or no opener');}})();</div>
+      <div style="font-family:'Chivo Mono',monospace;font-size:10px;color:var(--green);margin-top:8px;text-align:center;">&#x2713; Click to copy fallback command</div>
+      <div class="token-modal-note" style="margin-top:16px;">Stays connected for 1 hour. Reconnect if enrichment stops working.</div>
+      <button class="token-modal-close" id="insights-modal-close">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Fetch modal - outside app-screen so it overlays properly -->
+  <div class="fetch-modal hidden" id="fetch-modal">
+    <div class="token-modal-box">
+      <div class="token-modal-title">Step 2 — Run in Popup Console</div>
+      <div class="token-modal-steps">
+        <div class="step"><span class="step-n">1</span>The <strong>ModelMatch popup</strong> just opened — wait for it to fully load</div>
+        <div class="step"><span class="step-n">2</span>Press <strong>F12</strong> in the popup window → click the <strong>Console</strong> tab</div>
+        <div class="step"><span class="step-n">3</span>Click the command below to copy it, paste it in the popup console and press Enter</div>
+      </div>
+      <div class="token-code" id="fetch-cmd" style="font-size:9px;max-height:80px;overflow:auto;cursor:pointer;" title="Click to copy">…</div>
+      <div style="font-family:'Chivo Mono',monospace;font-size:10px;color:var(--green);margin-top:8px;text-align:center;">✓ Click the code above to copy it</div>
+      <div class="token-modal-note" style="margin-top:16px;">Data loads automatically after you run the command. The popup will close on its own.</div>
+      <button class="token-modal-close" id="fetch-modal-close">Cancel</button>
+    </div>
+  </div>
+</body>
+</html>
