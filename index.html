@@ -328,7 +328,7 @@ async function enrichGet(table) {
   });
   // Token expired mid-session — refresh and retry once
   if(res.status === 401) {
-    state.insightsToken = null;
+    _insightsToken = null;
     const newToken = await getInsightsToken();
     if(!newToken) throw new Error("Token refresh failed");
     const retry = await fetch(`/api/enrich?table=${table}`, {
@@ -348,7 +348,7 @@ async function enrichGet(table) {
 // Enrichment via insights.modelmatch.com is CORS-blocked from our domain
 // Returns null gracefully - enriched data is optional
 async function getInsightsToken() {
-  if(state.insightsToken && state.insightsToken.expiry > Date.now()) return state.insightsToken;
+  if(_insightsToken && _insightsToken.expiry > Date.now()) return _insightsToken;
   return null; // CORS blocks insights.modelmatch.com/refresh from our domain
 }
 
@@ -632,9 +632,8 @@ async function runSearch() {
   if(!nmls){ setStatus("Enter a valid NMLS ID","err"); return; }
 
   // Reset state
-  const cachedInsights = state.insightsToken;
   const cachedMm = state.mmToken;
-  state = { nmls, originatorId:null, searchResult:null, originatorData:null, loans:[], enrichedProps:{}, enrichedLoans:{}, totalLoans:0, insightsToken: cachedInsights, mmToken: cachedMm };
+  state = { nmls, originatorId:null, searchResult:null, originatorData:null, loans:[], enrichedProps:{}, enrichedLoans:{}, totalLoans:0, mmToken: cachedMm };
   $("results").style.display="none";
   $("pull-btn").disabled=true;
   $("spinner").style.display="inline-block";
@@ -708,14 +707,14 @@ async function enrichInBackground() {
   $("export-btn").disabled = false;
 
   // Need insights JWT - prompt user to connect if not available
-  if(!state.insightsToken || state.insightsToken.expiry <= Date.now()) {
+  if(!_insightsToken || _insightsToken.expiry <= Date.now()) {
     $("enrich-status").textContent = '⚠ Click "Connect Insights" to enable phone/email/rate data';
     return;
   }
 
   try {
-    const jwt = state.insightsToken.accessToken;
-    const userId = state.insightsToken.userId || "usr_01K232E13FWH0D650C46BMX9F6";
+    const jwt = _insightsToken.accessToken;
+    const userId = _insightsToken.userId || "usr_01K232E13FWH0D650C46BMX9F6";
     const appAuth = sessionStorage.getItem(SESSION_KEY+"_hash") || AUTH_HASH;
 
     const [propRes, loanRes] = await Promise.all([
