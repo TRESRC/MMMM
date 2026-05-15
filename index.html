@@ -661,11 +661,9 @@ async function runSearch() {
     "if(total===null)total=td?.total||txs.length;",
     "loans.push(...txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179'&&!!(t.address?.streetAddress||t.property_address)));",
     "from+=200;if(txs.length<200||from>=total)break;}",
-    // Get fresh insights JWT to pass back for enrichment
-    "let insightsJwt=null;try{const ir=await fetch('https://insights.modelmatch.com/refresh',{method:'POST',credentials:'include',mode:'cors'});const id=await ir.json();insightsJwt=id.accessToken||null;}catch(e){console.warn('insights JWT err:',e.message);}",
-    "window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator,loans,total,enrichedProps:{},enrichedLoans:{},insightsJwt}},'*');",
+    "window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator,loans,total,enrichedProps:{},enrichedLoans:{}}},'*');",
     "}catch(e){window.opener.postMessage({type:'MM_TOKEN_AUTO',error:e.message},'*');}",
-    "setTimeout(()=>window.close(),300);})()"
+    "// popup stays open for step 2\n})()"
   ].join('');
 
 
@@ -948,17 +946,23 @@ document.addEventListener("DOMContentLoaded", () => {
       $("results").style.display = "block";
       $("export-btn").disabled = false;
 
-      // Store fresh JWT from popup (fetched directly from app.modelmatch.com which can call insights)
-      if(insightsJwt) {
-        _insightsToken = { accessToken: insightsJwt, userId: "usr_01K232E13FWH0D650C46BMX9F6", expiry: Date.now() + 14*60*1000 };
-        $("insights-dot").style.background = "var(--green)";
-        $("insights-label").textContent = "Insights connected";
-        $("insights-label").style.color = "var(--green)";
-      }
-
-      setStatus("✓ " + state.loans.length + " loans loaded — enriching contact & rate data…", "ok");
+      setStatus("✓ " + state.loans.length + " loans loaded — opening Step 2…", "ok");
       $("enrich-status").textContent = "⧙ Fetching contact & rate data…";
-      enrichInBackground();
+      $("export-btn").disabled = false;
+
+      // Navigate popup to insights IMMEDIATELY (no delay - popup is still open)
+      const enrichCmd = "(async()=>{const r=await fetch('/refresh',{method:'POST',credentials:'include'});const d=await r.json();const jwt=d.accessToken;const uid=d.user;let ep={},el={};try{const ps=await fetch('https://api.next.modelmatch.com/shape/enriched-property',{method:'POST',headers:{Authorization:'Bearer '+jwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_property',where:'user_id = $1',params:[uid]}})});const pd=await ps.json();if(pd.url){const pr=await fetch(pd.url,{headers:{Authorization:pd.headers.Authorization}});const pt=await pr.text();for(const line of pt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value&&item.value['Street Address'])ep[item.value['Street Address'].toLowerCase().trim()]=item.value;});}catch{}}}}catch(e){}try{const ls=await fetch('https://api.next.modelmatch.com/shape/enriched-loan',{method:'POST',headers:{Authorization:'Bearer '+jwt,'Content-Type':'application/json',Origin:'https://insights.modelmatch.com'},body:JSON.stringify({shape:{table:'enriched_loan',where:'user_id = $1',params:[uid]}})});const ld=await ls.json();if(ld.url){const lr=await fetch(ld.url,{headers:{Authorization:ld.headers.Authorization}});const lt=await lr.text();for(const line of lt.split('\\n')){try{const p=JSON.parse(line);if(Array.isArray(p))p.forEach(item=>{if(item.value&&item.value.loanID)el[item.value.loanID]=item.value;});}catch{}}}}catch(e){}window.opener.postMessage({type:'MM_ENRICH',enrichedProps:ep,enrichedLoans:el},'*');setTimeout(()=>window.close(),300);})();";
+      try {
+        if(state.popupWin && !state.popupWin.closed) {
+          state.popupWin.location.href = 'https://insights.modelmatch.com/test/loans';
+        } else {
+          state.popupWin = window.open('https://insights.modelmatch.com/test/loans', 'mm_data_popup', 'width=900,height=600,menubar=no,toolbar=no,location=yes,status=no');
+        }
+      } catch(e) {
+        state.popupWin = window.open('https://insights.modelmatch.com/test/loans', 'mm_data_popup', 'width=900,height=600,menubar=no,toolbar=no,location=yes,status=no');
+      }
+      showFetchModal(enrichCmd, "Step 2 — paste in insights popup");
+      setStatus("✓ " + state.loans.length + " loans loaded — paste Step 2 in insights popup", "ok");
     } else if(e.data.type === 'MM_ENRICH') {
       // Enrichment data back from insights.modelmatch.com popup
       hideFetchModal();
@@ -1117,9 +1121,9 @@ document.addEventListener("DOMContentLoaded", () => {
     <div class="token-modal-box">
       <div class="token-modal-title">Step 2 — Run in Popup Console</div>
       <div class="token-modal-steps">
-        <div class="step"><span class="step-n">1</span>The <strong>ModelMatch popup</strong> just opened — wait for it to fully load</div>
-        <div class="step"><span class="step-n">2</span>Press <strong>F12</strong> in the popup window → click the <strong>Console</strong> tab</div>
-        <div class="step"><span class="step-n">3</span>Click the command below to copy it, paste it in the popup console and press Enter</div>
+        <div class="step"><span class="step-n">1</span>The popup just opened — wait for it to fully load</div>
+        <div class="step"><span class="step-n">2</span>Press <strong>F12</strong> in the popup → <strong>Console</strong> tab</div>
+        <div class="step"><span class="step-n">3</span>Click the command below to copy → paste in popup console → Enter</div>
       </div>
       <div class="token-code" id="fetch-cmd" style="font-size:9px;max-height:80px;overflow:auto;cursor:pointer;" title="Click to copy">…</div>
       <div style="font-family:'Chivo Mono',monospace;font-size:10px;color:var(--green);margin-top:8px;text-align:center;">✓ Click the code above to copy it</div>
