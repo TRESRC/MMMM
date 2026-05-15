@@ -661,7 +661,9 @@ async function runSearch() {
     "if(total===null)total=td?.total||txs.length;",
     "loans.push(...txs.filter(t=>t.loanCompany?.nmlsId!=='39179'&&t.employerNmlsId!=='39179'&&!!(t.address?.streetAddress||t.property_address)));",
     "from+=200;if(txs.length<200||from>=total)break;}",
-    "window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator,loans,total,enrichedProps:{},enrichedLoans:{}}},'*');",
+    // Get fresh insights JWT to pass back for enrichment
+    "let insightsJwt=null;try{const ir=await fetch('https://insights.modelmatch.com/refresh',{method:'POST',credentials:'include',mode:'cors'});const id=await ir.json();insightsJwt=id.accessToken||null;}catch(e){console.warn('insights JWT err:',e.message);}",
+    "window.opener.postMessage({type:'MM_TOKEN_AUTO',data:{originator,loans,total,enrichedProps:{},enrichedLoans:{},insightsJwt}},'*');",
     "}catch(e){window.opener.postMessage({type:'MM_TOKEN_AUTO',error:e.message},'*');}",
     "setTimeout(()=>window.close(),300);})()"
   ].join('');
@@ -929,7 +931,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if(e.data.data) {
       hideFetchModal();
-      const {originator, loans, total} = e.data.data;
+      const {originator, loans, total, insightsJwt} = e.data.data;
       state.searchResult = originator;
       state.originatorId = originator?.id;
       state.nmls = originator?.nmls_id;
@@ -941,11 +943,17 @@ document.addEventListener("DOMContentLoaded", () => {
       renderLoans();
       $("results").style.display = "block";
       $("export-btn").disabled = false;
-      setStatus("✓ " + state.loans.length + " loans loaded — opening enrichment popup…", "ok");
-      $("enrich-status").textContent = "⧙ Loading contact & rate data…";
 
-      // Step 2: fetch enrichment server-side via Vercel (no popup needed)
-      $("export-btn").disabled = false;
+      // Store fresh JWT from popup (fetched directly from app.modelmatch.com which can call insights)
+      if(insightsJwt) {
+        _insightsToken = { accessToken: insightsJwt, userId: "usr_01K232E13FWH0D650C46BMX9F6", expiry: Date.now() + 14*60*1000 };
+        $("insights-dot").style.background = "var(--green)";
+        $("insights-label").textContent = "Insights connected";
+        $("insights-label").style.color = "var(--green)";
+      }
+
+      setStatus("✓ " + state.loans.length + " loans loaded — enriching contact & rate data…", "ok");
+      $("enrich-status").textContent = "⧙ Fetching contact & rate data…";
       enrichInBackground();
     } else if(e.data.type === 'MM_ENRICH') {
       // Enrichment data back from insights.modelmatch.com popup
