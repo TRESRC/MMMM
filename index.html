@@ -927,7 +927,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Listen for data from popup
   window.addEventListener('message', (e) => {
-    if(e.data?.type !== 'MM_TOKEN_AUTO') return;
+    if(e.data?.type !== 'MM_TOKEN_AUTO' && e.data?.type !== 'MM_ENRICH') return;
     $("auto-token-btn").textContent = "⚡ Get Token Automatically";
     $("auto-token-btn").disabled = false;
 
